@@ -4,17 +4,21 @@ import json
 import base64
 import zlib
 import io
+import re
+import requests
+from requests.auth import HTTPBasicAuth
 from collections import Counter
 
 # =====================================================================
-# INTERFACE STREAMLIT - MODO LEITOR DE LINK (Operador)
+# INTERFACE STREAMLIT - CONFIGURAÇÃO
 # =====================================================================
 st.set_page_config(page_title="Gerador JSON - Adobe Campaign", layout="centered", page_icon="⚙️")
 
-# Se existir o parâmetro 'data' na URL, ele entra no modo "Leitor de JSON"
+# =====================================================================
+# MODO LEITOR DE LINK (Operador)
+# =====================================================================
 if 'data' in st.query_params:
     try:
-        # Pega os dados da URL, descompacta (zlib) e decodifica (base64)
         compressed_data = base64.urlsafe_b64decode(st.query_params['data'])
         json_string = zlib.decompress(compressed_data).decode('utf-8')
         
@@ -22,19 +26,79 @@ if 'data' in st.query_params:
         st.success("JSON carregado com sucesso via link!")
         st.warning("💡 COMO COPIAR: Passe o mouse no canto superior direito do bloco preto abaixo e clique no ícone de prancheta (📋) para copiar tudo.")
         
-        # Mostra apenas o código e interrompe o resto do app
         st.code(json_string, language='json')
         st.stop() 
     except Exception as e:
         st.error("⚠️ O link parece estar quebrado ou corrompido. Peça para gerar novamente.")
         st.stop()
 
+# =====================================================================
+# MÓDULO 1: INTEGRAÇÃO JIRA API (Sincronização de Metadados)
+# =====================================================================
+st.sidebar.header("🔌 Conexão Jira")
+ticket_input = st.sidebar.text_input("JIRA Ticket ID (ex: SEA-7117)").strip().upper()
+
+# ⚠️ COLOQUE AQUI SUAS CREDENCIAIS OFICIAIS
+JIRA_URL = "https://netbiis.atlassian.net"  # Sua URL Base
+JIRA_EMAIL = "roberto.vasconcelos@netbiis.com"            # Seu e-mail
+JIRA_TOKEN = "ATATT3xFfGF0DX-rWUJax5ANB2fbA5n-D1i0ev6UaUuUTKmeqURRSUD7NHuC05F2_3z5Fo1zSh_P9X8fr3Ic48yIE1bDnydZVkG0OF1Zl1i8ardOM7OFPR-SgKtmXtC_2LS3Yjq93M9gWdjwmJOf50Wk3zTv8YzWorlaMCsZ5UuIMuko-pZpt08=9A5BDC46"   
+
+if st.sidebar.button("Puxar Dados do Ticket"):
+    if ticket_input:
+        with st.spinner(f"Analisando estrutura do {ticket_input}..."):
+            auth = HTTPBasicAuth(JIRA_EMAIL, JIRA_TOKEN)
+            headers = {"Accept": "application/json"}
+            
+            # 1. Busca os dados do ticket principal
+            url_main = f"{JIRA_URL}/rest/api/2/issue/{ticket_input}"
+            resp_main = requests.get(url_main, headers=headers, auth=auth)
+            
+            if resp_main.status_code == 200:
+                dados_main = resp_main.json()
+                campos = dados_main.get("fields", {})
+                
+                # Extrai LOB e Título
+                lob = campos.get("customfield_10476", [""])[0] if campos.get("customfield_10476") else "N/A"
+                titulo = campos.get("summary", "")
+                
+                # 2. Varredura de Sub-tarefas para extrair Segmentos
+                subtasks = campos.get("subtasks", [])
+                segmentos_encontrados = set()
+                
+                for sub in subtasks:
+                    sub_key = sub.get("key")
+                    url_comments = f"{JIRA_URL}/rest/api/2/issue/{sub_key}/comment"
+                    resp_comments = requests.get(url_comments, headers=headers, auth=auth)
+                    
+                    if resp_comments.status_code == 200:
+                        comentarios = resp_comments.json().get("comments", [])
+                        for comment in comentarios:
+                            texto = comment.get("body", "")
+                            linhas = texto.split('\n')
+                            for linha in linhas:
+                                match = re.search(r'_WK\d+_([A-Za-z0-9_]+)', linha.strip())
+                                if match:
+                                    seg = match.group(1).strip()
+                                    if seg:
+                                        seg = re.sub(r'(?i)_v\d+$', '', seg)
+                                        segmentos_encontrados.add(seg)
+                
+                # Salva os dados na memória do app (session_state)
+                st.session_state['jira_dados'] = {
+                    "ticket": ticket_input,
+                    "lob": str(lob),
+                    "titulo": str(titulo),
+                    "segmentos": sorted(list(segmentos_encontrados))
+                }
+                st.sidebar.success("✅ Metadados sincronizados!")
+            else:
+                st.sidebar.error(f"Erro {resp_main.status_code}: Ticket não encontrado ou acesso negado.")
+    else:
+        st.sidebar.warning("Digite um Ticket ID válido.")
 
 # =====================================================================
 # FUNÇÕES DE PROCESSAMENTO (Coordenadora)
 # =====================================================================
-
-# NOVO: Função para extrair o cabeçalho (Metadata, Notas e Checklist) antes de limpar a tabela
 @st.cache_data
 def extract_metadata(file_bytes, file_name, sheet_name=None):
     try:
@@ -51,14 +115,14 @@ def extract_metadata(file_bytes, file_name, sheet_name=None):
         "user": "",
         "cid": "",
         "notes": [],
-        "include": "",
-        "exclude": ""
+        "include": [], 
+        "exclude": []
     }
 
     notes_col_idx = None
+    current_mode = None 
 
     for idx, row in df_raw.iterrows():
-        # Para a leitura quando chegar na tabela da Waterfall
         row_str = " ".join([str(x).lower() for x in row.values if pd.notna(x)])
         if 'waterfall order' in row_str or 'dag segment name' in row_str:
             break
@@ -66,10 +130,8 @@ def extract_metadata(file_bytes, file_name, sheet_name=None):
         col0 = str(row.values[0]).strip().lower() if pd.notna(row.values[0]) else ""
         col1 = str(row.values[1]).strip() if len(row.values) > 1 and pd.notna(row.values[1]) else ""
 
-        # Mapeamento do Resumo
         if "deployment name" in col0:
-            meta["campaign_name"] = col1
-            # Identifica em qual coluna está a palavra "NOTES"
+            meta["campaign_name"] = re.sub(r'(?i)_v2$', '', col1).strip()
             for i, val in enumerate(row.values):
                 if str(val).strip().lower() == 'notes':
                     notes_col_idx = i
@@ -78,17 +140,25 @@ def extract_metadata(file_bytes, file_name, sheet_name=None):
         elif col0 == "user":
             meta["user"] = col1
         elif col0 == "cid":
-            meta["cid"] = col1
+            meta["cid"] = re.sub(r'(?i)_segment$', '', col1).strip()
             
-        # Mapeamento do Checklist
         elif "only include" in col0:
+            current_mode = "include"
             vals = [str(x).strip() for x in row.values[1:] if pd.notna(x) and str(x).strip().lower() != 'nan']
-            meta["include"] = " | ".join(vals) if vals else ""
+            if vals: meta["include"].append(" | ".join(vals))
+            
         elif "exclude" in col0:
+            current_mode = "exclude"
             vals = [str(x).strip() for x in row.values[1:] if pd.notna(x) and str(x).strip().lower() != 'nan']
-            meta["exclude"] = " | ".join(vals) if vals else ""
+            if vals: meta["exclude"].append(" | ".join(vals))
+            
+        elif col0 == "and" and current_mode:
+            vals = [str(x).strip() for x in row.values[1:] if pd.notna(x) and str(x).strip().lower() != 'nan']
+            if vals: meta[current_mode].append(" | ".join(vals))
+            
+        elif col0 and col0 not in ["and", "criteria:"]:
+            current_mode = None
 
-        # Mapeamento dos Alertas (Notes)
         if notes_col_idx is not None and len(row.values) > notes_col_idx:
             note_val = str(row.values[notes_col_idx]).strip()
             if pd.notna(row.values[notes_col_idx]) and note_val and note_val.lower() not in ['nan', 'notes']:
@@ -98,7 +168,6 @@ def extract_metadata(file_bytes, file_name, sheet_name=None):
     return meta
 
 
-# 1. DESEMPENHO COM CACHE: Memoriza a leitura do arquivo para deixar a navegação instantânea
 @st.cache_data
 def load_and_clean_data(file_bytes, file_name, sheet_name=None):
     if file_name.endswith('.csv'):
@@ -136,12 +205,10 @@ def process_data(df):
         return ''
 
     for _, row in df.iterrows():
-        # HARD STOP: Para a leitura se chegar na área de referência
         row_text = ' '.join([str(val).lower() for val in row.values])
         if 'reference for combination' in row_text or 'suppression segments' in row_text:
             break  
 
-        # FILTRO N/A: Pula linhas onde o Waterfall Order for "N/A"
         waterfall_order = get_val(row, ['Waterfall Order', 'WaterfallOrder'])
         if waterfall_order.lower() == 'n/a':
             continue  
@@ -167,7 +234,6 @@ def process_data(df):
         if not dag_segment_name: dag_segment_name = cell_name
         if not cell_name: cell_name = dag_segment_name
 
-        # LIMPEZA DE CARACTERES ESPECIAIS
         dag_segment_name = dag_segment_name.replace('&', 'AND').replace(' ', '_')
         cell_name = cell_name.replace('&', 'AND').replace(' ', '_')
 
@@ -210,7 +276,6 @@ def process_data(df):
         is_split = has_split_in_code or has_split_in_volume
 
         if is_split:
-            # DIVISÃO DO SEGMENT CODE
             if "\n" in segment_code:
                 parts = [x.strip() for x in segment_code.split("\n") if x.strip()]
             elif "/" in segment_code:
@@ -218,7 +283,6 @@ def process_data(df):
             else:
                 parts = [segment_code, segment_code]
 
-            # DIVISÃO DO SLINE CODE
             if "\n" in sline_code:
                 sl_parts = [x.strip() for x in sline_code.split("\n") if x.strip()]
             elif "/" in sline_code:
@@ -226,22 +290,17 @@ def process_data(df):
             else:
                 sl_parts = [sline_code, sline_code]
 
-            # =================================================================
-            # CORREÇÃO DE ORDEM (CONTROL vs TEST)
-            # =================================================================
             if len(parts) >= 2:
                 p0_lower = parts[0].lower()
                 p1_lower = parts[1].lower()
                 is_p1_control = 'control' in p1_lower or 'ctrl' in p1_lower
                 is_p0_control = 'control' in p0_lower or 'ctrl' in p0_lower
                 
-                # Se a segunda linha for Control (e a primeira não for), inverte tudo
                 if is_p1_control and not is_p0_control:
                     parts[0], parts[1] = parts[1], parts[0]
                     if len(sl_parts) >= 2:
                         sl_parts[0], sl_parts[1] = sl_parts[1], sl_parts[0]
 
-            # LIMPEZA FINAL DOS NOMES
             code1 = parts[0].replace("(50%)", "").replace("50%:", "").replace("50%", "").strip()
             code2 = parts[1] if len(parts) > 1 else code1
             code2 = code2.replace("(50%)", "").replace("50%:", "").replace("50%", "").strip()
@@ -271,7 +330,7 @@ def process_data(df):
             waterfall_id += 2
 
             for r in records:
-                r["_Source"] = source  # Campo oculto para o Raio-X
+                r["_Source"] = source  
                 if source.upper() != "ACM":
                     r["DAGSCount"] = dag_count
                     r["isABTest"] = "FALSE"
@@ -279,7 +338,6 @@ def process_data(df):
                 final_json_data.append(r)
 
         else:
-            # LIMPEZA SE FOR 100%
             code = segment_code.replace("(100%)", "").replace("100%:", "").replace("100%", "").strip()
             sl_code = sline_code.replace("(100%)", "").replace("100%:", "").replace("100%", "").strip()
             
@@ -293,7 +351,7 @@ def process_data(df):
             }
             waterfall_id += 1
             
-            record["_Source"] = source # Campo oculto para o Raio-X
+            record["_Source"] = source 
 
             if source.upper() != "ACM":
                 record["DAGSCount"] = dag_count
@@ -307,28 +365,30 @@ def process_data(df):
 # INTERFACE STREAMLIT - MODO CRIADOR (Coordenadora)
 # =====================================================================
 st.title("⚙️ Segment-to-JSON Converter")
+
+# Renderiza a barra azul informacional se o Jira já tiver sido puxado
+if 'jira_dados' in st.session_state:
+    jd = st.session_state['jira_dados']
+    st.info(f"**Ticket Ativo:** {jd['ticket']} | **LOB:** {jd['lob']} | **Segmentos:** {', '.join(jd['segmentos']) if jd['segmentos'] else 'Nenhum'}")
+
 st.write("Faça o upload da planilha para auditar, gerar a estrutura JSON e o Link Direto.")
 
 uploaded_file = st.file_uploader("Selecione o arquivo fonte", type=["xlsx", "csv"])
 
 if uploaded_file is not None:
     try:
-        # Extraindo os bytes para utilizar o cache e gerenciar abas de forma limpa
         file_bytes = uploaded_file.getvalue()
         file_name = uploaded_file.name
         
-        # 2. LEITURA DE MÚLTIPLAS ABAS (Multi-sheet Handling)
         sheet_selection = None
         if file_name.endswith(('.xlsx', '.xls')):
             xls = pd.ExcelFile(io.BytesIO(file_bytes))
             sheet_names = xls.sheet_names
             if len(sheet_names) > 1:
-                # Se tiver mais de uma aba, exibe um menu para escolher
                 sheet_selection = st.selectbox("📂 Múltiplas abas detectadas. Selecione a aba da cachoeira:", sheet_names)
             else:
                 sheet_selection = sheet_names[0]
 
-        # Executa a extração dos novos dados visuais e a limpeza do DF
         meta = extract_metadata(file_bytes, file_name, sheet_selection)
         df = load_and_clean_data(file_bytes, file_name, sheet_selection)
         
@@ -337,36 +397,34 @@ if uploaded_file is not None:
         if st.button("Analisar e Gerar JSON"):
             json_objects = process_data(df)
             
-            # =================================================================
-            # 1. RESUMO DA CAMPANHA (METADATA)
-            # =================================================================
             st.divider()
             st.subheader("📋 1. Resumo da Campanha (Metadata)")
             colA, colB, colC = st.columns(3)
-            colA.metric("Campanha", meta.get("campaign_name", "N/A"))
-            colB.metric("Data Prevista (Deployment)", meta.get("deployment_date", "N/A"))
-            colC.metric("Solicitante (User)", meta.get("user", "N/A"))
+            
+            with colA:
+                st.caption("Campanha")
+                st.write(f"**{meta.get('campaign_name', 'N/A')}**")
+            with colB:
+                st.caption("Data Prevista (Deployment)")
+                st.write(f"**{meta.get('deployment_date', 'N/A')}**")
+            with colC:
+                st.caption("Solicitante (User)")
+                st.write(f"**{meta.get('user', 'N/A')}**")
+                
             if meta.get("cid"):
-                st.caption(f"**CID (Rastreio):** `{meta.get('cid')}`")
+                st.markdown(f"**CID (Rastreio):** `{meta.get('cid')}`")
 
-            # =================================================================
-            # 2. ALERTAS DE PERSONALIZAÇÃO (NOTES)
-            # =================================================================
             if meta.get("notes"):
                 st.subheader("⚠️ 2. Alertas de Personalização (Notes)")
                 for note in meta.get("notes", []):
                     st.info(note, icon="💡")
 
-            # =================================================================
-            # AUDITORIA PROATIVA (O FISCAL)
-            # =================================================================
             st.divider()
             st.subheader("🕵️‍♂️ Auditoria da Planilha")
             
             errors = []
             warnings = []
             
-            # Checagem de CellName Duplicado (O que causa erro no Adobe)
             cell_names = [obj.get("CellName", "") for obj in json_objects]
             counts = Counter(cell_names)
             duplicates = [name for name, count in counts.items() if count > 1 and name != ""]
@@ -374,19 +432,17 @@ if uploaded_file is not None:
             if duplicates:
                 errors.append(f"Nomes de Célula (CellName) Duplicados (Causa erro no Adobe): {', '.join(duplicates)}")
                 
-            # Checagem de campos obrigatórios vazios
             for obj in json_objects:
                 if not obj.get("CellName"):
                     warnings.append(f"CellName vazio no WaterfallId {obj.get('WaterfallId')}")
                 if not obj.get("SlineCode"):
                     warnings.append(f"SlineCode vazio no WaterfallId {obj.get('WaterfallId')}")
                     
-            # Exibição dos alertas
             if errors:
                 st.error("🚨 Erros Críticos Encontrados. Corrija a planilha antes de gerar o link!")
                 for e in errors:
                     st.write(f"- {e}")
-                st.stop() # Bloqueia a aplicação aqui se tiver erro fatal
+                st.stop() 
                 
             if warnings:
                 st.warning("⚠️ Avisos de Preenchimento (Verifique se é proposital):")
@@ -396,9 +452,6 @@ if uploaded_file is not None:
             if not errors and not warnings:
                 st.success("✅ Planilha impecável! Nenhuma anomalia estrutural encontrada.")
 
-            # =================================================================
-            # 3. VISÃO GERAL DA WATERFALL (RAIO-X VISUAL MELHORADO)
-            # =================================================================
             st.divider()
             st.subheader("📊 3. Visão Geral da Waterfall")
             
@@ -406,7 +459,6 @@ if uploaded_file is not None:
             total_ab_tests = sum(1 for obj in json_objects if obj.get("Split") == 0.5) // 2
             total_volume = sum(float(obj.get("DAGSCount", 0)) for obj in json_objects)
             
-            # Utiliza a chave oculta Source que criamos no process_data
             total_acm = sum(1 for obj in json_objects if str(obj.get("_Source", "")).upper() == "ACM")
             total_dag = total_segments - total_acm
             
@@ -424,23 +476,26 @@ if uploaded_file is not None:
                 })
                 st.bar_chart(chart_data.set_index("Segmento"))
 
-            # =================================================================
-            # 4. CHECKLIST DE SUPRESSÃO E INCLUSÃO
-            # =================================================================
             st.divider()
             st.subheader("✅ 4. Checklist de Supressão e Inclusão")
             inc_col, exc_col = st.columns(2)
-            with inc_col:
-                st.success(f"**🎯 ONLY INCLUDE (Filtros Globais):**\n\n{meta.get('include', 'N/A')}")
-            with exc_col:
-                st.error(f"**🚫 EXCLUDE (Supressões):**\n\n{meta.get('exclude', 'N/A')}")
-
-
-            # =================================================================
-            # GERAÇÃO DO LINK E JSON FINAL
-            # =================================================================
             
-            # Limpa o campo auxiliar "_Source" para não sujar o JSON do Adobe
+            with inc_col:
+                st.success("**🎯 ONLY INCLUDE (Filtros Globais):**")
+                if meta.get("include"):
+                    for item in meta["include"]:
+                        st.write(f"- {item}")
+                else:
+                    st.write("N/A")
+                    
+            with exc_col:
+                st.error("**🚫 EXCLUDE (Supressões):**")
+                if meta.get("exclude"):
+                    for item in meta["exclude"]:
+                        st.write(f"- {item}")
+                else:
+                    st.write("N/A")
+
             for obj in json_objects:
                 obj.pop("_Source", None)
                 
