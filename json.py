@@ -1,7 +1,3 @@
-import zipfile
-import os
-import datetime
-from openpyxl import load_workbook
 import streamlit as st
 import pandas as pd
 import json
@@ -12,6 +8,10 @@ import re
 import requests
 from requests.auth import HTTPBasicAuth
 from collections import Counter
+import zipfile
+import os
+import datetime
+from openpyxl import load_workbook
 
 # =====================================================================
 # INTERFACE STREAMLIT - CONFIGURAÇÃO
@@ -43,9 +43,9 @@ st.sidebar.header("🔌 Conexão Jira")
 ticket_input = st.sidebar.text_input("JIRA Ticket ID (ex: SEA-7117)").strip().upper()
 
 # ⚠️ COLOQUE AQUI SUAS CREDENCIAIS OFICIAIS
-JIRA_URL = "https://netbiis.atlassian.net"  # Sua URL Base
-JIRA_EMAIL = "roberto.vasconcelos@netbiis.com"            # Seu e-mail
-JIRA_TOKEN = "ATATT3xFfGF0DX-rWUJax5ANB2fbA5n-D1i0ev6UaUuUTKmeqURRSUD7NHuC05F2_3z5Fo1zSh_P9X8fr3Ic48yIE1bDnydZVkG0OF1Zl1i8ardOM7OFPR-SgKtmXtC_2LS3Yjq93M9gWdjwmJOf50Wk3zTv8YzWorlaMCsZ5UuIMuko-pZpt08=9A5BDC46"   
+JIRA_URL = "https://netbiis.atlassian.net"
+JIRA_EMAIL = "seu.email@netbiis.com" 
+JIRA_TOKEN = "COLE_SEU_TOKEN_AQUI"   
 
 if st.sidebar.button("Puxar Dados do Ticket"):
     if ticket_input:
@@ -64,6 +64,16 @@ if st.sidebar.button("Puxar Dados do Ticket"):
                 # Extrai LOB e Título
                 lob = campos.get("customfield_10476", [""])[0] if campos.get("customfield_10476") else "N/A"
                 titulo = campos.get("summary", "")
+                
+                # Extrai a Data de Deploy do Título (ex: 10/28 -> 28/10/AnoAtual)
+                ano_atual = datetime.datetime.now().year
+                data_deploy = ""
+                match_data = re.search(r'\((\d{1,2})/(\d{1,2})\)', titulo)
+                if match_data:
+                    mes, dia = match_data.groups()
+                    data_deploy = f"{dia.zfill(2)}/{mes.zfill(2)}/{ano_atual}"
+                else:
+                    data_deploy = datetime.datetime.now().strftime("%d/%m/%Y")
                 
                 # 2. Varredura de Sub-tarefas para extrair Segmentos
                 subtasks = campos.get("subtasks", [])
@@ -92,7 +102,8 @@ if st.sidebar.button("Puxar Dados do Ticket"):
                     "ticket": ticket_input,
                     "lob": str(lob),
                     "titulo": str(titulo),
-                    "segmentos": sorted(list(segmentos_encontrados))
+                    "segmentos": sorted(list(segmentos_encontrados)),
+                    "data_deploy": data_deploy
                 }
                 st.sidebar.success("✅ Metadados sincronizados!")
             else:
@@ -373,7 +384,8 @@ st.title("⚙️ Segment-to-JSON Converter")
 # Renderiza a barra azul informacional se o Jira já tiver sido puxado
 if 'jira_dados' in st.session_state:
     jd = st.session_state['jira_dados']
-    st.info(f"**Ticket Ativo:** {jd['ticket']} | **LOB:** {jd['lob']} | **Segmentos:** {', '.join(jd['segmentos']) if jd['segmentos'] else 'Nenhum'}")
+    data_deploy_texto = jd.get('data_deploy', 'N/A')
+    st.info(f"**Ticket Ativo:** {jd['ticket']} | **LOB:** {jd['lob']} | **Deploy:** {data_deploy_texto} | **Segmentos:** {', '.join(jd['segmentos']) if jd['segmentos'] else 'Nenhum'}")
 
 st.write("Faça o upload da planilha para auditar, gerar a estrutura JSON e o Link Direto.")
 
@@ -529,6 +541,7 @@ if uploaded_file is not None:
 
     except Exception as e:
         st.error(f"Ocorreu um erro ao processar o arquivo: {e}")
+
 # =====================================================================
 # MÓDULO 2: GERADOR DE PACOTE ZIP (Substitui o PowerShell)
 # =====================================================================
@@ -544,7 +557,9 @@ if 'jira_dados' in st.session_state:
         lob = jd['lob']
         segmentos = jd['segmentos'] if jd['segmentos'] else ["N_A"]
         
+        # Formatação correta das datas
         data_hoje = datetime.datetime.now().strftime("%d/%m/%Y")
+        data_deploy = jd.get('data_deploy', data_hoje)
         reviewer = "Roberto"
         
         # Buffer de memória para o arquivo ZIP
@@ -626,7 +641,7 @@ if 'jira_dados' in st.session_state:
                         ws_target["D2"] = f"LOB:{lob}"
                         ws_target["D3"] = f"JIRA Ticket: {job_id}"
                         ws_target["D4"] = f"Segment: {seg_name}"
-                        ws_target["D5"] = data_hoje
+                        ws_target["D5"] = data_deploy
                         
                     lc_stream = io.BytesIO()
                     wb_lc.save(lc_stream)
