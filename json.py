@@ -570,12 +570,25 @@ if 'jira_dados' in st.session_state:
                 
                 qa_geral_path = f"{job_id}/04_QA_Geral"
                 
-                # Criação das pastas de Segmentos
+                # Carrega o CSV de Subjects para a memória, se existir
+                template_csv_path = "_Templates/Input de Subjects - Modelo.csv"
+                csv_content = b""
+                if os.path.exists(template_csv_path):
+                    with open(template_csv_path, "rb") as f:
+                        csv_content = f.read()
+
+                # Criação das pastas de Segmentos e injeção do CSV
                 for seg in segmentos:
                     seg_folder = f"{job_id}/{seg}" if seg != "N_A" else job_id
                     zip_file.writestr(f"{seg_folder}/01_Inputs/", "")
                     zip_file.writestr(f"{seg_folder}/02_HTML/", "")
                     zip_file.writestr(f"{seg_folder}/03_LP/", "")
+                    
+                    # Se o CSV foi encontrado, cria uma cópia dele dentro da pasta 01_Inputs
+                    if csv_content:
+                        seg_name = seg if seg != "N_A" else "Geral"
+                        nome_csv = f"Input de Subjects - {seg_name}.csv"
+                        zip_file.writestr(f"{seg_folder}/01_Inputs/{nome_csv}", csv_content)
                 
                 # Caminho dos templates locais
                 template_rev_path = "_Templates/Revisao - Modelo.xlsx"
