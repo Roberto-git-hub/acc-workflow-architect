@@ -43,9 +43,9 @@ st.sidebar.header("🔌 Conexão Jira")
 ticket_input = st.sidebar.text_input("JIRA Ticket ID (ex: SEA-7117)").strip().upper()
 
 # ⚠️ COLOQUE AQUI SUAS CREDENCIAIS OFICIAIS
-JIRA_URL = "https://netbiis.atlassian.net"
-JIRA_EMAIL = "seu.email@netbiis.com" 
-JIRA_TOKEN = "COLE_SEU_TOKEN_AQUI"   
+JIRA_URL = "https://netbiis.atlassian.net"  # Sua URL Base
+JIRA_EMAIL = "roberto.vasconcelos@netbiis.com"            # Seu e-mail
+JIRA_TOKEN = "ATATT3xFfGF0DX-rWUJax5ANB2fbA5n-D1i0ev6UaUuUTKmeqURRSUD7NHuC05F2_3z5Fo1zSh_P9X8fr3Ic48yIE1bDnydZVkG0OF1Zl1i8ardOM7OFPR-SgKtmXtC_2LS3Yjq93M9gWdjwmJOf50Wk3zTv8YzWorlaMCsZ5UuIMuko-pZpt08=9A5BDC46"   
 
 if st.sidebar.button("Puxar Dados do Ticket"):
     if ticket_input:
