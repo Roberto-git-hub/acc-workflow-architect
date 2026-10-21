@@ -604,8 +604,8 @@ if 'jira_dados' in st.session_state:
                             
                         ws_target.title = nome_aba
                         
-                        ws_target["F2"] = f"EX; {job_id}"
-                        ws_target["F3"] = f"EX; {seg_name}"
+                        ws_target["F2"] = f"{job_id}"
+                        ws_target["F3"] = f"{seg_name}"
                         ws_target["F4"] = reviewer
                         ws_target["F6"] = data_hoje
                     
