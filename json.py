@@ -1,3 +1,7 @@
+import zipfile
+import os
+import datetime
+from openpyxl import load_workbook
 import streamlit as st
 import pandas as pd
 import json
@@ -525,3 +529,116 @@ if uploaded_file is not None:
 
     except Exception as e:
         st.error(f"Ocorreu um erro ao processar o arquivo: {e}")
+# =====================================================================
+# MÓDULO 2: GERADOR DE PACOTE ZIP (Substitui o PowerShell)
+# =====================================================================
+st.divider()
+st.subheader("📦 5. Gerar Estrutura de Pastas e QA (ZIP)")
+
+if 'jira_dados' in st.session_state:
+    st.info("Utilizando os dados sincronizados do Jira para criar as pastas e as planilhas de QA.")
+    
+    if st.button("📥 Gerar e Baixar Pacote ZIP do Job", type="primary"):
+        jd = st.session_state['jira_dados']
+        job_id = jd['ticket']
+        lob = jd['lob']
+        segmentos = jd['segmentos'] if jd['segmentos'] else ["N_A"]
+        
+        data_hoje = datetime.datetime.now().strftime("%dd/%mm/%yyyy")
+        reviewer = "Roberto"
+        
+        # Buffer de memória para o arquivo ZIP
+        zip_buffer = io.BytesIO()
+        
+        with st.spinner("Construindo pastas e preenchendo planilhas de QA..."):
+            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                
+                qa_geral_path = f"{job_id}/04_QA_Geral"
+                
+                # Criação das pastas de Segmentos
+                for seg in segmentos:
+                    seg_folder = f"{job_id}/{seg}" if seg != "N_A" else job_id
+                    zip_file.writestr(f"{seg_folder}/01_Inputs/", "")
+                    zip_file.writestr(f"{seg_folder}/02_HTML/", "")
+                    zip_file.writestr(f"{seg_folder}/03_LP/", "")
+                
+                # Caminho dos templates locais
+                template_rev_path = "_Templates/Revisao - Modelo.xlsx"
+                template_lc_path = "_Templates/Last Check - Modelo.xlsx"
+                
+                # --- PROCESSAR PLANILHA DE REVISÃO ---
+                if os.path.exists(template_rev_path):
+                    wb_rev = load_workbook(template_rev_path)
+                    ws_temp_rev = wb_rev.active
+                    
+                    # Faxina de abas ocultas
+                    for sheet_name in wb_rev.sheetnames:
+                        if sheet_name != ws_temp_rev.title:
+                            del wb_rev[sheet_name]
+                    
+                    for i, seg in enumerate(segmentos):
+                        seg_name = "N/A" if seg == "N_A" else seg
+                        
+                        raw_aba_name = job_id if seg_name == "N/A" else f"{job_id} - {seg_name}"
+                        nome_aba = re.sub(r'[/\\?*\[\]]', '', raw_aba_name)[:31]
+                        
+                        if i == 0:
+                            ws_target = ws_temp_rev
+                        else:
+                            ws_target = wb_rev.copy_worksheet(ws_temp_rev)
+                            
+                        ws_target.title = nome_aba
+                        
+                        ws_target["F2"] = f"EX; {job_id}"
+                        ws_target["F3"] = f"EX; {seg_name}"
+                        ws_target["F4"] = reviewer
+                        ws_target["F6"] = data_hoje
+                    
+                    # Salva no ZIP em memória
+                    rev_stream = io.BytesIO()
+                    wb_rev.save(rev_stream)
+                    zip_file.writestr(f"{qa_geral_path}/Revisao Jobs Samsung - {job_id}.xlsx", rev_stream.getvalue())
+
+                # --- PROCESSAR PLANILHA LAST CHECK ---
+                if os.path.exists(template_lc_path):
+                    wb_lc = load_workbook(template_lc_path)
+                    ws_temp_lc = wb_lc.active
+                    
+                    # Faxina de abas ocultas
+                    for sheet_name in wb_lc.sheetnames:
+                        if sheet_name != ws_temp_lc.title:
+                            del wb_lc[sheet_name]
+                            
+                    for i, seg in enumerate(segmentos):
+                        seg_name = "N/A" if seg == "N_A" else seg
+                        
+                        raw_aba_name = job_id if seg_name == "N/A" else f"{job_id} - {seg_name}"
+                        nome_aba = re.sub(r'[/\\?*\[\]]', '', raw_aba_name)[:31]
+                        
+                        if i == 0:
+                            ws_target = ws_temp_lc
+                        else:
+                            ws_target = wb_lc.copy_worksheet(ws_temp_lc)
+                            
+                        ws_target.title = nome_aba
+                        
+                        ws_target["D1"] = f"Reviewed by: {reviewer} Vasconcelos"
+                        ws_target["D2"] = f"LOB:{lob}"
+                        ws_target["D3"] = f"JIRA Ticket: {job_id}"
+                        ws_target["D4"] = f"Segment: {seg_name}"
+                        ws_target["D5"] = data_hoje
+                        
+                    lc_stream = io.BytesIO()
+                    wb_lc.save(lc_stream)
+                    zip_file.writestr(f"{qa_geral_path}/Last Check - {job_id}.xlsx", lc_stream.getvalue())
+
+        st.success("🎉 Estrutura ZIP gerada com sucesso!")
+        st.download_button(
+            label="📦 Baixar Estrutura do Job (.zip)",
+            data=zip_buffer.getvalue(),
+            file_name=f"Job_{job_id}_Estrutura.zip",
+            mime="application/zip",
+            use_container_width=True
+        )
+else:
+    st.warning("Puxe os dados do Jira na barra lateral primeiro para habilitar a geração das pastas automáticas.")
