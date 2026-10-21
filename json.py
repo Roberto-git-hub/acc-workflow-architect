@@ -12,6 +12,7 @@ import zipfile
 import os
 import datetime
 from openpyxl import load_workbook
+import copy
 
 # =====================================================================
 # INTERFACE STREAMLIT - CONFIGURAÇÃO
@@ -614,6 +615,9 @@ if 'jira_dados' in st.session_state:
                             ws_target = ws_temp_rev
                         else:
                             ws_target = wb_rev.copy_worksheet(ws_temp_rev)
+                            # Clona as imagens (logo) da aba original para a nova
+                            for img in ws_temp_rev._images:
+                                ws_target.add_image(copy.copy(img), img.anchor)
                             
                         ws_target.title = nome_aba
                         
@@ -647,6 +651,9 @@ if 'jira_dados' in st.session_state:
                             ws_target = ws_temp_lc
                         else:
                             ws_target = wb_lc.copy_worksheet(ws_temp_lc)
+                            # Clona as imagens (logo) da aba original para a nova
+                            for img in ws_temp_lc._images:
+                                ws_target.add_image(copy.copy(img), img.anchor)
                             
                         ws_target.title = nome_aba
                         
