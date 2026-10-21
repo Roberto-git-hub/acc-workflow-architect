@@ -1,4 +1,3 @@
-import re
 import streamlit as st
 import pandas as pd
 import json
@@ -52,12 +51,11 @@ def extract_metadata(file_bytes, file_name, sheet_name=None):
         "user": "",
         "cid": "",
         "notes": [],
-        "include": [], 
-        "exclude": []
+        "include": "",
+        "exclude": ""
     }
 
     notes_col_idx = None
-    current_mode = None 
 
     for idx, row in df_raw.iterrows():
         # Para a leitura quando chegar na tabela da Waterfall
@@ -70,7 +68,8 @@ def extract_metadata(file_bytes, file_name, sheet_name=None):
 
         # Mapeamento do Resumo
         if "deployment name" in col0:
-            meta["campaign_name"] = re.sub(r'(?i)_v2$', '', col1).strip()
+            meta["campaign_name"] = col1
+            # Identifica em qual coluna está a palavra "NOTES"
             for i, val in enumerate(row.values):
                 if str(val).strip().lower() == 'notes':
                     notes_col_idx = i
@@ -79,27 +78,15 @@ def extract_metadata(file_bytes, file_name, sheet_name=None):
         elif col0 == "user":
             meta["user"] = col1
         elif col0 == "cid":
-            meta["cid"] = re.sub(r'(?i)_segment$', '', col1).strip()
+            meta["cid"] = col1
             
-        # Mapeamento do Checklist (Com suporte a múltiplas linhas "AND")
+        # Mapeamento do Checklist
         elif "only include" in col0:
-            current_mode = "include"
             vals = [str(x).strip() for x in row.values[1:] if pd.notna(x) and str(x).strip().lower() != 'nan']
-            if vals: meta["include"].append(" | ".join(vals))
-            
+            meta["include"] = " | ".join(vals) if vals else ""
         elif "exclude" in col0:
-            current_mode = "exclude"
             vals = [str(x).strip() for x in row.values[1:] if pd.notna(x) and str(x).strip().lower() != 'nan']
-            if vals: meta["exclude"].append(" | ".join(vals))
-            
-        elif col0 == "and" and current_mode:
-            # Se a linha começa com AND, ele joga na lista que estiver ativa
-            vals = [str(x).strip() for x in row.values[1:] if pd.notna(x) and str(x).strip().lower() != 'nan']
-            if vals: meta[current_mode].append(" | ".join(vals))
-            
-        elif col0 and col0 not in ["and", "criteria:"]:
-            # Se for outra coisa (ex: Send Volume), desliga o rastreador
-            current_mode = None
+            meta["exclude"] = " | ".join(vals) if vals else ""
 
         # Mapeamento dos Alertas (Notes)
         if notes_col_idx is not None and len(row.values) > notes_col_idx:
@@ -126,17 +113,12 @@ def load_and_clean_data(file_bytes, file_name, sheet_name=None):
     if 'unnamed' in first_col or 'deployment' in first_col:
         for idx, row in df.iterrows():
             row_values = [str(val).lower().strip() for val in row.values]
-            
-            # ATUALIZADO: Match Parcial para ler o cabeçalho mesmo se vier com avisos e parênteses
-            has_header = any(any(k in v for k in ['dag segment name', 'segment name', 'cellname', 'waterfall order']) for v in row_values)
-            
-            if has_header:
+            if any(k in row_values for k in ['dag segment name', 'segment name', 'cellname', 'waterfall order']):
                 df.columns = df.iloc[idx]
                 df = df.iloc[idx + 1:].reset_index(drop=True)
                 break
 
     return df
-
 
 def process_data(df):
     final_json_data = []
@@ -144,23 +126,13 @@ def process_data(df):
 
     cols = {str(c).strip().lower(): c for c in df.columns}
 
-    # ATUALIZADO: Adicionado Match Flexível (Substring) para ler colunas renomeadas
     def get_val(row, possible_names):
-        # 1. Tenta Match Exato primeiro
         for name in possible_names:
             actual_col = cols.get(name.lower())
             if actual_col is not None:
                 val = str(row.get(actual_col, '')).strip()
                 if val.lower() != 'nan' and val != '':
                     return val
-        
-        # 2. Tenta Match Parcial (ex: acha 'cellname' dentro de 'cellname (please use this...)')
-        for col_lower, actual_col in cols.items():
-            for name in possible_names:
-                if name.lower() in col_lower:
-                    val = str(row.get(actual_col, '')).strip()
-                    if val.lower() != 'nan' and val != '':
-                        return val
         return ''
 
     for _, row in df.iterrows():
@@ -254,7 +226,9 @@ def process_data(df):
             else:
                 sl_parts = [sline_code, sline_code]
 
+            # =================================================================
             # CORREÇÃO DE ORDEM (CONTROL vs TEST)
+            # =================================================================
             if len(parts) >= 2:
                 p0_lower = parts[0].lower()
                 p1_lower = parts[1].lower()
@@ -297,7 +271,7 @@ def process_data(df):
             waterfall_id += 2
 
             for r in records:
-                r["_Source"] = source  
+                r["_Source"] = source  # Campo oculto para o Raio-X
                 if source.upper() != "ACM":
                     r["DAGSCount"] = dag_count
                     r["isABTest"] = "FALSE"
@@ -319,7 +293,7 @@ def process_data(df):
             }
             waterfall_id += 1
             
-            record["_Source"] = source 
+            record["_Source"] = source # Campo oculto para o Raio-X
 
             if source.upper() != "ACM":
                 record["DAGSCount"] = dag_count
@@ -343,12 +317,13 @@ if uploaded_file is not None:
         file_bytes = uploaded_file.getvalue()
         file_name = uploaded_file.name
         
-        # LEITURA DE MÚLTIPLAS ABAS (Multi-sheet Handling)
+        # 2. LEITURA DE MÚLTIPLAS ABAS (Multi-sheet Handling)
         sheet_selection = None
         if file_name.endswith(('.xlsx', '.xls')):
             xls = pd.ExcelFile(io.BytesIO(file_bytes))
             sheet_names = xls.sheet_names
             if len(sheet_names) > 1:
+                # Se tiver mais de uma aba, exibe um menu para escolher
                 sheet_selection = st.selectbox("📂 Múltiplas abas detectadas. Selecione a aba da cachoeira:", sheet_names)
             else:
                 sheet_selection = sheet_names[0]
@@ -368,19 +343,11 @@ if uploaded_file is not None:
             st.divider()
             st.subheader("📋 1. Resumo da Campanha (Metadata)")
             colA, colB, colC = st.columns(3)
-            
-            with colA:
-                st.caption("Campanha")
-                st.write(f"**{meta.get('campaign_name', 'N/A')}**")
-            with colB:
-                st.caption("Data Prevista (Deployment)")
-                st.write(f"**{meta.get('deployment_date', 'N/A')}**")
-            with colC:
-                st.caption("Solicitante (User)")
-                st.write(f"**{meta.get('user', 'N/A')}**")
-                
+            colA.metric("Campanha", meta.get("campaign_name", "N/A"))
+            colB.metric("Data Prevista (Deployment)", meta.get("deployment_date", "N/A"))
+            colC.metric("Solicitante (User)", meta.get("user", "N/A"))
             if meta.get("cid"):
-                st.markdown(f"**CID (Rastreio):** `{meta.get('cid')}`")
+                st.caption(f"**CID (Rastreio):** `{meta.get('cid')}`")
 
             # =================================================================
             # 2. ALERTAS DE PERSONALIZAÇÃO (NOTES)
@@ -399,7 +366,7 @@ if uploaded_file is not None:
             errors = []
             warnings = []
             
-            # Checagem de CellName Duplicado
+            # Checagem de CellName Duplicado (O que causa erro no Adobe)
             cell_names = [obj.get("CellName", "") for obj in json_objects]
             counts = Counter(cell_names)
             duplicates = [name for name, count in counts.items() if count > 1 and name != ""]
@@ -407,23 +374,12 @@ if uploaded_file is not None:
             if duplicates:
                 errors.append(f"Nomes de Célula (CellName) Duplicados (Causa erro no Adobe): {', '.join(duplicates)}")
                 
-            # Checagem de campos obrigatórios vazios E Limite de 64 Caracteres (Adobe Constraint)
+            # Checagem de campos obrigatórios vazios
             for obj in json_objects:
-                c_name = obj.get("CellName", "")
-                d_name = obj.get("DAGSegmentName", "")
-                w_id = obj.get("WaterfallId")
-                
-                # Campos vazios
-                if not c_name:
-                    warnings.append(f"CellName vazio no WaterfallId {w_id}")
+                if not obj.get("CellName"):
+                    warnings.append(f"CellName vazio no WaterfallId {obj.get('WaterfallId')}")
                 if not obj.get("SlineCode"):
-                    warnings.append(f"SlineCode vazio no WaterfallId {w_id}")
-                    
-                # Validação Crítica de Limite de Caracteres do Adobe Campaign (Max 64)
-                if len(c_name) > 64:
-                    errors.append(f"CellName '{c_name}' tem {len(c_name)} caracteres! (Máximo permitido pelo Adobe é 64). Reduza o nome.")
-                if len(d_name) > 64:
-                    errors.append(f"DAGSegmentName '{d_name}' tem {len(d_name)} caracteres! (Máximo permitido pelo Adobe é 64). Reduza o nome.")
+                    warnings.append(f"SlineCode vazio no WaterfallId {obj.get('WaterfallId')}")
                     
             # Exibição dos alertas
             if errors:
@@ -433,7 +389,7 @@ if uploaded_file is not None:
                 st.stop() # Bloqueia a aplicação aqui se tiver erro fatal
                 
             if warnings:
-                st.warning("⚠️️ Avisos de Preenchimento (Verifique se é proposital):")
+                st.warning("⚠️ Avisos de Preenchimento (Verifique se é proposital):")
                 for w in warnings:
                     st.write(f"- {w}")
                     
@@ -474,22 +430,10 @@ if uploaded_file is not None:
             st.divider()
             st.subheader("✅ 4. Checklist de Supressão e Inclusão")
             inc_col, exc_col = st.columns(2)
-            
             with inc_col:
-                st.success("**🎯 ONLY INCLUDE (Filtros Globais):**")
-                if meta.get("include"):
-                    for item in meta["include"]:
-                        st.write(f"- {item}")
-                else:
-                    st.write("N/A")
-                    
+                st.success(f"**🎯 ONLY INCLUDE (Filtros Globais):**\n\n{meta.get('include', 'N/A')}")
             with exc_col:
-                st.error("**🚫 EXCLUDE (Supressões):**")
-                if meta.get("exclude"):
-                    for item in meta["exclude"]:
-                        st.write(f"- {item}")
-                else:
-                    st.write("N/A")
+                st.error(f"**🚫 EXCLUDE (Supressões):**\n\n{meta.get('exclude', 'N/A')}")
 
 
             # =================================================================
