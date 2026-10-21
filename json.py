@@ -39,15 +39,25 @@ if 'data' in st.query_params:
         st.stop()
 
 # =====================================================================
-# MÓDULO 1: INTEGRAÇÃO JIRA API (Sincronização de Metadados)
+# MÓDULO 1: INTEGRAÇÃO JIRA API & UI DE LIMPEZA
 # =====================================================================
 st.sidebar.header("🔌 Conexão Jira")
+
+# Botão de Limpeza da Sessão (UX)
+if st.sidebar.button("🔄 Limpar Sessão (Novo Job)"):
+    st.session_state.clear()
+    st.rerun()
+
 ticket_input = st.sidebar.text_input("JIRA Ticket ID (ex: SEA-7117)").strip().upper()
 
-# ⚠️ COLOQUE AQUI SUAS CREDENCIAIS OFICIAIS
-JIRA_URL = "https://netbiis.atlassian.net"  # Sua URL Base
-JIRA_EMAIL = "roberto.vasconcelos@netbiis.com"            # Seu e-mail
-JIRA_TOKEN = "ATATT3xFfGF0DX-rWUJax5ANB2fbA5n-D1i0ev6UaUuUTKmeqURRSUD7NHuC05F2_3z5Fo1zSh_P9X8fr3Ic48yIE1bDnydZVkG0OF1Zl1i8ardOM7OFPR-SgKtmXtC_2LS3Yjq93M9gWdjwmJOf50Wk3zTv8YzWorlaMCsZ5UuIMuko-pZpt08=9A5BDC46"   
+# 🔒 CREDENCIAIS PROTEGIDAS (Via Streamlit Secrets)
+JIRA_URL = "https://netbiis.atlassian.net"
+try:
+    JIRA_EMAIL = st.secrets["JIRA_EMAIL"]
+    JIRA_TOKEN = st.secrets["JIRA_TOKEN"]
+except KeyError:
+    st.sidebar.error("⚠️ Credenciais não encontradas. Configure o 'Secrets' no Streamlit Cloud.")
+    st.stop()
 
 if st.sidebar.button("Puxar Dados do Ticket"):
     if ticket_input:
@@ -55,7 +65,6 @@ if st.sidebar.button("Puxar Dados do Ticket"):
             auth = HTTPBasicAuth(JIRA_EMAIL, JIRA_TOKEN)
             headers = {"Accept": "application/json"}
             
-            # 1. Busca os dados do ticket principal
             url_main = f"{JIRA_URL}/rest/api/2/issue/{ticket_input}"
             resp_main = requests.get(url_main, headers=headers, auth=auth)
             
@@ -63,11 +72,9 @@ if st.sidebar.button("Puxar Dados do Ticket"):
                 dados_main = resp_main.json()
                 campos = dados_main.get("fields", {})
                 
-                # Extrai LOB e Título
                 lob = campos.get("customfield_10476", [""])[0] if campos.get("customfield_10476") else "N/A"
                 titulo = campos.get("summary", "")
                 
-                # Extrai a Data de Deploy do Título (ex: 10/28 -> 28/10/AnoAtual)
                 ano_atual = datetime.datetime.now().year
                 data_deploy = ""
                 match_data = re.search(r'\((\d{1,2})/(\d{1,2})\)', titulo)
@@ -77,7 +84,6 @@ if st.sidebar.button("Puxar Dados do Ticket"):
                 else:
                     data_deploy = datetime.datetime.now().strftime("%d/%m/%Y")
                 
-                # 2. Varredura de Sub-tarefas para extrair Segmentos
                 subtasks = campos.get("subtasks", [])
                 segmentos_encontrados = set()
                 
@@ -99,7 +105,6 @@ if st.sidebar.button("Puxar Dados do Ticket"):
                                         seg = re.sub(r'(?i)_v\d+$', '', seg)
                                         segmentos_encontrados.add(seg)
                 
-                # Salva os dados na memória do app (session_state)
                 st.session_state['jira_dados'] = {
                     "ticket": ticket_input,
                     "lob": str(lob),
@@ -379,11 +384,10 @@ def process_data(df):
     return final_json_data
 
 # =====================================================================
-# INTERFACE STREAMLIT - MODO CRIADOR (Coordenadora)
+# INTERFACE STREAMLIT - MODO CRIADOR
 # =====================================================================
 st.title("⚙️ Segment-to-JSON Converter")
 
-# Renderiza a barra azul informacional se o Jira já tiver sido puxado
 if 'jira_dados' in st.session_state:
     jd = st.session_state['jira_dados']
     data_deploy_texto = jd.get('data_deploy', 'N/A')
@@ -528,10 +532,6 @@ if uploaded_file is not None:
             st.subheader("🔗 Seu Link de Compartilhamento")
             st.info("Copie o link abaixo e cole na planilha. Quem clicar verá diretamente o JSON.")
             st.code(shareable_link, language='text')
-
-            st.divider()
-            st.subheader("📄 Resultado (JSON Bruto):")
-            st.code(json_string, language='json')
             
             st.download_button(
                 label="📥 Baixar Arquivo .json",
@@ -545,7 +545,7 @@ if uploaded_file is not None:
         st.error(f"Ocorreu um erro ao processar o arquivo: {e}")
 
 # =====================================================================
-# MÓDULO 2: GERADOR DE PACOTE ZIP (Substitui o PowerShell)
+# MÓDULO 2: GERADOR DE PACOTE ZIP COM PROGRESS BAR
 # =====================================================================
 st.divider()
 st.subheader("📦 5. Gerar Estrutura de Pastas e QA (ZIP)")
@@ -559,156 +559,151 @@ if 'jira_dados' in st.session_state:
         lob = jd['lob']
         segmentos = jd['segmentos'] if jd['segmentos'] else ["N_A"]
         
-        # Formatação correta das datas
         data_hoje = datetime.datetime.now().strftime("%d/%m/%Y")
         data_deploy = jd.get('data_deploy', data_hoje)
         reviewer = "Roberto"
         
-        # Buffer de memória para o arquivo ZIP
         zip_buffer = io.BytesIO()
         
-        with st.spinner("Construindo pastas e preenchendo planilhas de QA..."):
-            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-                
-                qa_geral_path = f"{job_id}/04_QA_Geral"
-                
-                # Carrega o CSV de Subjects para a memória, se existir
-                template_csv_path = "_Templates/Input de Subjects - Modelo.csv"
-                csv_content = b""
-                if os.path.exists(template_csv_path):
-                    with open(template_csv_path, "rb") as f:
-                        csv_content = f.read()
+        # Inicia a Barra de Progresso visual na tela
+        progress_text = "Iniciando estruturação das pastas..."
+        my_bar = st.progress(10, text=progress_text)
+        
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+            
+            qa_geral_path = f"{job_id}/04_QA_Geral"
+            
+            my_bar.progress(30, text="Lendo arquivo CSV modelo (Inputs)...")
+            template_csv_path = "_Templates/Input de Subjects - Modelo.csv"
+            csv_content = b""
+            if os.path.exists(template_csv_path):
+                with open(template_csv_path, "rb") as f:
+                    csv_content = f.read()
 
-                # Criação das pastas de Segmentos e injeção do CSV
-                for seg in segmentos:
-                    seg_folder = f"{job_id}/{seg}" if seg != "N_A" else job_id
-                    zip_file.writestr(f"{seg_folder}/01_Inputs/", "")
-                    zip_file.writestr(f"{seg_folder}/02_HTML/", "")
-                    zip_file.writestr(f"{seg_folder}/03_LP/", "")
-                    
-                    # Se o CSV foi encontrado, cria uma cópia dele dentro da pasta 01_Inputs
-                    if csv_content:
-                        seg_name = seg if seg != "N_A" else "Geral"
-                        nome_csv = f"Input de Subjects - {seg_name}.csv"
-                        zip_file.writestr(f"{seg_folder}/01_Inputs/{nome_csv}", csv_content)
+            my_bar.progress(45, text="Criando as pastas de cada segmento...")
+            for seg in segmentos:
+                seg_folder = f"{job_id}/{seg}" if seg != "N_A" else job_id
+                zip_file.writestr(f"{seg_folder}/01_Inputs/", "")
+                zip_file.writestr(f"{seg_folder}/02_HTML/", "")
+                zip_file.writestr(f"{seg_folder}/03_LP/", "")
                 
-                # Caminho dos templates locais
-                template_rev_path = "_Templates/Revisao - Modelo.xlsx"
-                template_lc_path = "_Templates/Last Check - Modelo.xlsx"
+                if csv_content:
+                    seg_name = seg if seg != "N_A" else "Geral"
+                    nome_csv = f"Input de Subjects - {seg_name}.csv"
+                    zip_file.writestr(f"{seg_folder}/01_Inputs/{nome_csv}", csv_content)
+            
+            template_rev_path = "_Templates/Revisao - Modelo.xlsx"
+            template_lc_path = "_Templates/Last Check - Modelo.xlsx"
+            
+            my_bar.progress(60, text="Clonando abas e injetando Logos (Revisão)...")
+            # --- PROCESSAR PLANILHA DE REVISÃO ---
+            if os.path.exists(template_rev_path):
+                wb_rev = load_workbook(template_rev_path)
+                ws_temp_rev = wb_rev.active
                 
-                # --- PROCESSAR PLANILHA DE REVISÃO ---
-                # --- PROCESSAR PLANILHA DE REVISÃO ---
-                if os.path.exists(template_rev_path):
-                    wb_rev = load_workbook(template_rev_path)
-                    ws_temp_rev = wb_rev.active
-                    
-                    # 1. Salvar os bytes do logo original ANTES de qualquer modificação
-                    logos_rev = []
-                    for img in ws_temp_rev._images:
-                        try:
-                            if hasattr(img.ref, 'getvalue'):
-                                img_bytes = img.ref.getvalue()
-                            elif hasattr(img.ref, 'read'):
-                                img.ref.seek(0)
-                                img_bytes = img.ref.read()
-                            else:
-                                img_bytes = img._data()
-                            logos_rev.append((img_bytes, copy.copy(img.anchor)))
-                        except:
-                            pass
-                    
-                    # Faxina de abas ocultas
-                    for sheet_name in wb_rev.sheetnames:
-                        if sheet_name != ws_temp_rev.title:
-                            del wb_rev[sheet_name]
-                    
-                    for i, seg in enumerate(segmentos):
-                        seg_name = "N/A" if seg == "N_A" else seg
-                        
-                        raw_aba_name = job_id if seg_name == "N/A" else f"{job_id} - {seg_name}"
-                        nome_aba = re.sub(r'[/\\?*\[\]]', '', raw_aba_name)[:31]
-                        
-                        if i == 0:
-                            ws_target = ws_temp_rev
+                logos_rev = []
+                for img in ws_temp_rev._images:
+                    try:
+                        if hasattr(img.ref, 'getvalue'):
+                            img_bytes = img.ref.getvalue()
+                        elif hasattr(img.ref, 'read'):
+                            img.ref.seek(0)
+                            img_bytes = img.ref.read()
                         else:
-                            ws_target = wb_rev.copy_worksheet(ws_temp_rev)
-                            # Injeta o logo recriado a partir da memória nas abas clonadas
-                            for img_bytes, anchor in logos_rev:
-                                try:
-                                    nova_img = xlImage(io.BytesIO(img_bytes))
-                                    nova_img.anchor = copy.copy(anchor)
-                                    ws_target.add_image(nova_img)
-                                except:
-                                    pass
-                            
-                        ws_target.title = nome_aba
-                        
-                        ws_target["F2"] = f"EX; {job_id}"
-                        ws_target["F3"] = f"EX; {seg_name}"
-                        ws_target["F4"] = reviewer
-                        ws_target["F6"] = data_hoje
+                            img_bytes = img._data()
+                        logos_rev.append((img_bytes, copy.copy(img.anchor)))
+                    except:
+                        pass
+                
+                for sheet_name in wb_rev.sheetnames:
+                    if sheet_name != ws_temp_rev.title:
+                        del wb_rev[sheet_name]
+                
+                for i, seg in enumerate(segmentos):
+                    seg_name = "N/A" if seg == "N_A" else seg
                     
-                    # Salva no ZIP em memória
-                    rev_stream = io.BytesIO()
-                    wb_rev.save(rev_stream)
-                    zip_file.writestr(f"{qa_geral_path}/Revisao Jobs Samsung - {job_id}.xlsx", rev_stream.getvalue())
+                    raw_aba_name = job_id if seg_name == "N/A" else f"{job_id} - {seg_name}"
+                    nome_aba = re.sub(r'[/\\?*\[\]]', '', raw_aba_name)[:31]
                     
-                # --- PROCESSAR PLANILHA LAST CHECK ---
-                if os.path.exists(template_lc_path):
-                    wb_lc = load_workbook(template_lc_path)
-                    ws_temp_lc = wb_lc.active
+                    if i == 0:
+                        ws_target = ws_temp_rev
+                    else:
+                        ws_target = wb_rev.copy_worksheet(ws_temp_rev)
+                        for img_bytes, anchor in logos_rev:
+                            try:
+                                nova_img = xlImage(io.BytesIO(img_bytes))
+                                nova_img.anchor = copy.copy(anchor)
+                                ws_target.add_image(nova_img)
+                            except:
+                                pass
+                        
+                    ws_target.title = nome_aba
                     
-                    # 1. Salvar os bytes do logo original ANTES de qualquer modificação
-                    logos_lc = []
-                    for img in ws_temp_lc._images:
-                        try:
-                            if hasattr(img.ref, 'getvalue'):
-                                img_bytes = img.ref.getvalue()
-                            elif hasattr(img.ref, 'read'):
-                                img.ref.seek(0)
-                                img_bytes = img.ref.read()
-                            else:
-                                img_bytes = img._data()
-                            logos_lc.append((img_bytes, copy.copy(img.anchor)))
-                        except:
-                            pass
-                    
-                    # Faxina de abas ocultas
-                    for sheet_name in wb_lc.sheetnames:
-                        if sheet_name != ws_temp_lc.title:
-                            del wb_lc[sheet_name]
-                            
-                    for i, seg in enumerate(segmentos):
-                        seg_name = "N/A" if seg == "N_A" else seg
-                        
-                        raw_aba_name = job_id if seg_name == "N/A" else f"{job_id} - {seg_name}"
-                        nome_aba = re.sub(r'[/\\?*\[\]]', '', raw_aba_name)[:31]
-                        
-                        if i == 0:
-                            ws_target = ws_temp_lc
-                        else:
-                            ws_target = wb_lc.copy_worksheet(ws_temp_lc)
-                            # Injeta o logo recriado a partir da memória nas abas clonadas
-                            for img_bytes, anchor in logos_lc:
-                                try:
-                                    nova_img = xlImage(io.BytesIO(img_bytes))
-                                    nova_img.anchor = copy.copy(anchor)
-                                    ws_target.add_image(nova_img)
-                                except:
-                                    pass
-                            
-                        ws_target.title = nome_aba
-                        
-                        ws_target["D1"] = f"Reviewed by: {reviewer} Vasconcelos"
-                        ws_target["D2"] = f"LOB:{lob}"
-                        ws_target["D3"] = f"JIRA Ticket: {job_id}"
-                        ws_target["D4"] = f"Segment: {seg_name}"
-                        ws_target["D5"] = data_deploy
-                        
-                    lc_stream = io.BytesIO()
-                    wb_lc.save(lc_stream)
-                    zip_file.writestr(f"{qa_geral_path}/Last Check - {job_id}.xlsx", lc_stream.getvalue())
+                    ws_target["F2"] = f"EX; {job_id}"
+                    ws_target["F3"] = f"EX; {seg_name}"
+                    ws_target["F4"] = reviewer
+                    ws_target["F6"] = data_hoje
+                
+                rev_stream = io.BytesIO()
+                wb_rev.save(rev_stream)
+                zip_file.writestr(f"{qa_geral_path}/Revisao Jobs Samsung - {job_id}.xlsx", rev_stream.getvalue())
 
+            my_bar.progress(85, text="Clonando abas e injetando Logos (Last Check)...")
+            # --- PROCESSAR PLANILHA LAST CHECK ---
+            if os.path.exists(template_lc_path):
+                wb_lc = load_workbook(template_lc_path)
+                ws_temp_lc = wb_lc.active
+                
+                logos_lc = []
+                for img in ws_temp_lc._images:
+                    try:
+                        if hasattr(img.ref, 'getvalue'):
+                            img_bytes = img.ref.getvalue()
+                        elif hasattr(img.ref, 'read'):
+                            img.ref.seek(0)
+                            img_bytes = img.ref.read()
+                        else:
+                            img_bytes = img._data()
+                        logos_lc.append((img_bytes, copy.copy(img.anchor)))
+                    except:
+                        pass
+                
+                for sheet_name in wb_lc.sheetnames:
+                    if sheet_name != ws_temp_lc.title:
+                        del wb_lc[sheet_name]
+                        
+                for i, seg in enumerate(segmentos):
+                    seg_name = "N/A" if seg == "N_A" else seg
+                    
+                    raw_aba_name = job_id if seg_name == "N/A" else f"{job_id} - {seg_name}"
+                    nome_aba = re.sub(r'[/\\?*\[\]]', '', raw_aba_name)[:31]
+                    
+                    if i == 0:
+                        ws_target = ws_temp_lc
+                    else:
+                        ws_target = wb_lc.copy_worksheet(ws_temp_lc)
+                        for img_bytes, anchor in logos_lc:
+                            try:
+                                nova_img = xlImage(io.BytesIO(img_bytes))
+                                nova_img.anchor = copy.copy(anchor)
+                                ws_target.add_image(nova_img)
+                            except:
+                                pass
+                        
+                    ws_target.title = nome_aba
+                    
+                    ws_target["D1"] = f"Reviewed by: {reviewer} Vasconcelos"
+                    ws_target["D2"] = f"LOB:{lob}"
+                    ws_target["D3"] = f"JIRA Ticket: {job_id}"
+                    ws_target["D4"] = f"Segment: {seg_name}"
+                    ws_target["D5"] = data_deploy
+                    
+                lc_stream = io.BytesIO()
+                wb_lc.save(lc_stream)
+                zip_file.writestr(f"{qa_geral_path}/Last Check - {job_id}.xlsx", lc_stream.getvalue())
+
+        my_bar.progress(100, text="✅ Pacote ZIP finalizado com sucesso!")
+        
         st.success("🎉 Estrutura ZIP gerada com sucesso!")
         st.download_button(
             label="📦 Baixar Estrutura do Job (.zip)",
