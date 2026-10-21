@@ -544,7 +544,7 @@ if 'jira_dados' in st.session_state:
         lob = jd['lob']
         segmentos = jd['segmentos'] if jd['segmentos'] else ["N_A"]
         
-        data_hoje = datetime.datetime.now().strftime("%dd/%mm/%yyyy")
+        data_hoje = datetime.datetime.now().strftime("%d/%m/%Y")
         reviewer = "Roberto"
         
         # Buffer de memória para o arquivo ZIP
