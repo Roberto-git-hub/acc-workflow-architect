@@ -12,6 +12,7 @@ import zipfile
 import os
 import datetime
 from openpyxl import load_workbook
+from openpyxl.drawing.image import Image as xlImage
 import copy
 
 # =====================================================================
@@ -615,9 +616,11 @@ if 'jira_dados' in st.session_state:
                             ws_target = ws_temp_rev
                         else:
                             ws_target = wb_rev.copy_worksheet(ws_temp_rev)
-                            # Clona as imagens (logo) da aba original para a nova
+                            # Extrai os bytes da imagem original e injeta na aba nova
                             for img in ws_temp_rev._images:
-                                ws_target.add_image(copy.copy(img), img.anchor)
+                                nova_img = xlImage(io.BytesIO(img._data()))
+                                nova_img.anchor = copy.copy(img.anchor)
+                                ws_target.add_image(nova_img)
                             
                         ws_target.title = nome_aba
                         
@@ -651,9 +654,11 @@ if 'jira_dados' in st.session_state:
                             ws_target = ws_temp_lc
                         else:
                             ws_target = wb_lc.copy_worksheet(ws_temp_lc)
-                            # Clona as imagens (logo) da aba original para a nova
+                            # Extrai os bytes da imagem original e injeta na aba nova
                             for img in ws_temp_lc._images:
-                                ws_target.add_image(copy.copy(img), img.anchor)
+                                nova_img = xlImage(io.BytesIO(img._data()))
+                                nova_img.anchor = copy.copy(img.anchor)
+                                ws_target.add_image(nova_img)
                             
                         ws_target.title = nome_aba
                         
