@@ -597,9 +597,25 @@ if 'jira_dados' in st.session_state:
                 template_lc_path = "_Templates/Last Check - Modelo.xlsx"
                 
                 # --- PROCESSAR PLANILHA DE REVISÃO ---
+                # --- PROCESSAR PLANILHA DE REVISÃO ---
                 if os.path.exists(template_rev_path):
                     wb_rev = load_workbook(template_rev_path)
                     ws_temp_rev = wb_rev.active
+                    
+                    # 1. Salvar os bytes do logo original ANTES de qualquer modificação
+                    logos_rev = []
+                    for img in ws_temp_rev._images:
+                        try:
+                            if hasattr(img.ref, 'getvalue'):
+                                img_bytes = img.ref.getvalue()
+                            elif hasattr(img.ref, 'read'):
+                                img.ref.seek(0)
+                                img_bytes = img.ref.read()
+                            else:
+                                img_bytes = img._data()
+                            logos_rev.append((img_bytes, copy.copy(img.anchor)))
+                        except:
+                            pass
                     
                     # Faxina de abas ocultas
                     for sheet_name in wb_rev.sheetnames:
@@ -616,16 +632,19 @@ if 'jira_dados' in st.session_state:
                             ws_target = ws_temp_rev
                         else:
                             ws_target = wb_rev.copy_worksheet(ws_temp_rev)
-                            # Extrai os bytes da imagem original e injeta na aba nova
-                            for img in ws_temp_rev._images:
-                                nova_img = xlImage(io.BytesIO(img._data()))
-                                nova_img.anchor = copy.copy(img.anchor)
-                                ws_target.add_image(nova_img)
+                            # Injeta o logo recriado a partir da memória nas abas clonadas
+                            for img_bytes, anchor in logos_rev:
+                                try:
+                                    nova_img = xlImage(io.BytesIO(img_bytes))
+                                    nova_img.anchor = copy.copy(anchor)
+                                    ws_target.add_image(nova_img)
+                                except:
+                                    pass
                             
                         ws_target.title = nome_aba
                         
-                        ws_target["F2"] = f"{job_id}"
-                        ws_target["F3"] = f"{seg_name}"
+                        ws_target["F2"] = f"EX; {job_id}"
+                        ws_target["F3"] = f"EX; {seg_name}"
                         ws_target["F4"] = reviewer
                         ws_target["F6"] = data_hoje
                     
@@ -633,11 +652,26 @@ if 'jira_dados' in st.session_state:
                     rev_stream = io.BytesIO()
                     wb_rev.save(rev_stream)
                     zip_file.writestr(f"{qa_geral_path}/Revisao Jobs Samsung - {job_id}.xlsx", rev_stream.getvalue())
-
+                    
                 # --- PROCESSAR PLANILHA LAST CHECK ---
                 if os.path.exists(template_lc_path):
                     wb_lc = load_workbook(template_lc_path)
                     ws_temp_lc = wb_lc.active
+                    
+                    # 1. Salvar os bytes do logo original ANTES de qualquer modificação
+                    logos_lc = []
+                    for img in ws_temp_lc._images:
+                        try:
+                            if hasattr(img.ref, 'getvalue'):
+                                img_bytes = img.ref.getvalue()
+                            elif hasattr(img.ref, 'read'):
+                                img.ref.seek(0)
+                                img_bytes = img.ref.read()
+                            else:
+                                img_bytes = img._data()
+                            logos_lc.append((img_bytes, copy.copy(img.anchor)))
+                        except:
+                            pass
                     
                     # Faxina de abas ocultas
                     for sheet_name in wb_lc.sheetnames:
@@ -654,11 +688,14 @@ if 'jira_dados' in st.session_state:
                             ws_target = ws_temp_lc
                         else:
                             ws_target = wb_lc.copy_worksheet(ws_temp_lc)
-                            # Extrai os bytes da imagem original e injeta na aba nova
-                            for img in ws_temp_lc._images:
-                                nova_img = xlImage(io.BytesIO(img._data()))
-                                nova_img.anchor = copy.copy(img.anchor)
-                                ws_target.add_image(nova_img)
+                            # Injeta o logo recriado a partir da memória nas abas clonadas
+                            for img_bytes, anchor in logos_lc:
+                                try:
+                                    nova_img = xlImage(io.BytesIO(img_bytes))
+                                    nova_img.anchor = copy.copy(anchor)
+                                    ws_target.add_image(nova_img)
+                                except:
+                                    pass
                             
                         ws_target.title = nome_aba
                         
