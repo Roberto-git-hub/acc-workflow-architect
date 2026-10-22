@@ -371,7 +371,7 @@ def process_data(df):
     return final_json_data
 
 # =====================================================================
-# FUNÇÃO: GERADOR DE SUBJECTS ACC (Com Suporte a Excel Inteligente 3.0)
+# FUNÇÃO: GERADOR DE SUBJECTS ACC (Com Suporte a Excel Inteligente 4.0)
 # =====================================================================
 def generate_acc_subject_code(file_bytes, file_name):
     temp_subjects = []
@@ -390,39 +390,46 @@ def generate_acc_subject_code(file_bytes, file_name):
                         if pd.notna(val):
                             val_str = str(val).strip()
                             
-                            # Padrão A: SL e Texto misturados na mesma célula, em qualquer posição
-                            # Ex: "Qualquer coisa \n SL_1: \n [Name]..."
-                            match_same = re.search(r'(SL[\s_-]?\d+)[\s:\-]+(.+)', val_str, re.IGNORECASE | re.DOTALL)
+                            # Procura qualquer "SL" seguido de um número (ex: SL1, SL_1, SL-1, SL 1)
+                            sl_match = re.search(r'(SL[\s_-]?\d+)', val_str, re.IGNORECASE)
                             
-                            # Padrão B: Célula tem apenas o código SL (Ex: " SL_1 ")
-                            match_exact = re.search(r'^\s*(SL[\s_-]?\d+)\s*$', val_str, re.IGNORECASE)
-                            
-                            sl_code = None
-                            subject_text = ""
-                            
-                            if match_same:
-                                sl_code = match_same.group(1).strip()
-                                subject_text = match_same.group(2).strip()
-                            elif match_exact:
-                                sl_code = match_exact.group(1).strip()
-                                # 1. Tenta pegar o texto na célula imediatamente à direita
-                                if i + 1 < len(row.values) and pd.notna(row.values[i+1]):
-                                    subject_text = str(row.values[i+1]).strip()
-                                # 2. Se não houver nada à direita, tenta pegar na célula de baixo
-                                elif idx + 1 < len(df) and pd.notna(df.iloc[idx+1, i]):
-                                    subject_text = str(df.iloc[idx+1, i]).strip()
-                                    
-                            if sl_code and subject_text:
-                                # Remove quebras de linha que possam quebrar o JavaScript
-                                subject_text = re.sub(r'\s+', ' ', subject_text)
-                                # Padroniza o código (ex: "SL 1" ou "SL1" vira "SL_1")
-                                normalized_code = re.sub(r'^SL[\s_-]?', 'SL_', sl_code, flags=re.IGNORECASE).upper()
+                            if sl_match:
+                                sl_code = sl_match.group(1).strip()
                                 
-                                temp_subjects.append({
-                                    "originalCode": sl_code.replace(" ", ""),
-                                    "normalizedCode": normalized_code,
-                                    "text": subject_text
-                                })
+                                # Extrai tudo o que vem DEPOIS do código na mesma célula
+                                text_after = val_str[sl_match.end():]
+                                # Remove "lixo" (dois pontos, traços, espaços, quebras de linha) no início do texto
+                                text_after = re.sub(r'^[\s:\-]+', '', text_after).strip()
+                                
+                                subject_text = ""
+                                
+                                # Padrão A: O texto estava na mesma célula que o código
+                                if text_after:
+                                    subject_text = text_after
+                                # Padrão B: A célula só tinha o código, o texto está noutra célula
+                                else:
+                                    # 1. Tenta a célula imediatamente à direita
+                                    if i + 1 < len(row.values) and pd.notna(row.values[i+1]):
+                                        right_val = str(row.values[i+1]).strip()
+                                        if right_val:
+                                            subject_text = right_val
+                                    
+                                    # 2. Se a direita estiver vazia, tenta a célula de baixo
+                                    if not subject_text and idx + 1 < len(df) and pd.notna(df.iloc[idx+1, i]):
+                                        bottom_val = str(df.iloc[idx+1, i]).strip()
+                                        if bottom_val:
+                                            subject_text = bottom_val
+                                
+                                if subject_text:
+                                    # Limpa quebras de linha (Alt+Enter) que possam quebrar o JavaScript
+                                    subject_text = re.sub(r'\s+', ' ', subject_text)
+                                    normalized_code = re.sub(r'^SL[\s_-]?', 'SL_', sl_code, flags=re.IGNORECASE).upper()
+                                    
+                                    temp_subjects.append({
+                                        "originalCode": sl_code.replace(" ", ""),
+                                        "normalizedCode": normalized_code,
+                                        "text": subject_text
+                                    })
         except Exception as e:
             return None, f"Erro ao ler o Excel: {e}"
             
