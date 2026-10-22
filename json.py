@@ -661,7 +661,7 @@ with tab2:
                             data_deploy = f"{dia.zfill(2)}/{mes.zfill(2)}/{ano_atual}"
                         else: data_deploy = datetime.datetime.now().strftime("%m/%d/%Y")
                         
-                        # --- NOVO: Captura do dono do ticket principal como fallback ---
+                        ## --- Captura do dono do ticket principal como fallback ---
                         assignee_main = campos.get("assignee")
                         qa_reviewer_name = assignee_main.get("displayName", "N/A") if assignee_main else "N/A"
                         
@@ -670,7 +670,7 @@ with tab2:
                         
                         for sub in subtasks:
                             sub_key = sub.get("key")
-                            # NOVO: Extrai a sub-task completa via API
+                            # Extrai a sub-task completa via API
                             url_sub = f"{JIRA_URL}/rest/api/2/issue/{sub_key}"
                             resp_sub = requests.get(url_sub, headers=headers, auth=auth)
                             
@@ -688,11 +688,11 @@ with tab2:
                                             seg = match.group(1).strip().upper()
                                             if seg: segmentos_encontrados.add(re.sub(r'_V\d+$', '', seg))
                                             
-                                # 2. Procura Assignee Específico de QA/Proof
+                                # 2. Procura Assignee Específico APENAS de QA (Ignora HTML Proof)
                                 sub_summary = sub_fields.get("summary", "").upper()
-                                if "QA" in sub_summary or "REVIEW" in sub_summary or "PROOF" in sub_summary:
+                                if "1A QA" in sub_summary or "QA REVIEW" in sub_summary:
                                     sub_assignee = sub_fields.get("assignee")
-                                    if sub_assignee:
+                                    if sub_assignee: # Só substitui se houver alguém atribuído à 1A
                                         qa_reviewer_name = sub_assignee.get("displayName", qa_reviewer_name)
                         
                         st.session_state['jira_dados'] = {
