@@ -20,58 +20,129 @@ import copy
 # =====================================================================
 st.set_page_config(page_title="Netbiis Automation", layout="wide", page_icon="⚙️")
 
-# --- INJEÇÃO DE CSS PERSONALIZADO (UI/UX PREMIUM) ---
+# --- INJEÇÃO DE CSS AVANÇADO (ULTRA PREMIUM UI) ---
 st.markdown("""
 <style>
-    /* Esconde o menu hamburger e o rodapé padrão do Streamlit para um look mais limpo */
+    /* 1. Fonte Moderna: Inter */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    
+    html, body, [class*="css"], .stMarkdown, div {
+        font-family: 'Inter', sans-serif !important;
+    }
+
+    /* 2. Ocultar Menus Padrão do Streamlit */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
-    /* Estilização dos botões principais */
-    .stButton>button {
-        border-radius: 6px;
-        font-weight: 600;
-        border: 1px solid #4B4B4B;
-        transition: all 0.3s ease;
+    /* 3. Títulos com Gradiente Premium */
+    h1 {
+        background: -webkit-linear-gradient(45deg, #0071e3, #40E0D0);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        font-weight: 700 !important;
+        letter-spacing: -1px;
     }
-    .stButton>button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(255,255,255,0.1);
-        border-color: #0071e3;
-        color: #0071e3;
-    }
-    
-    /* Botões primários (Primary) */
-    .stButton>button[data-baseweb="button"].st-emotion-cache-1r6slb0 {
-        background-color: #0071e3 !important;
-        color: white !important;
-        border: none !important;
-    }
-    .stButton>button[data-baseweb="button"].st-emotion-cache-1r6slb0:hover {
-        background-color: #005bb5 !important;
-        box-shadow: 0 4px 14px rgba(0, 113, 227, 0.4) !important;
-    }
-
-    /* Cartões de Métricas (Dashboard style) */
-    div[data-testid="metric-container"] {
-        background-color: #1E1E1E;
-        border: 1px solid #333;
-        padding: 15px 20px;
-        border-radius: 8px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-    }
-    
-    /* Títulos mais elegantes */
-    h1, h2, h3 {
-        font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    h2, h3 {
+        font-weight: 600 !important;
+        color: #F5F5F7 !important;
         letter-spacing: -0.5px;
     }
+
+    /* 4. Estilização de Botões (Efeito de Levitação e Sombras) */
+    .stButton>button {
+        border-radius: 8px !important;
+        font-weight: 600 !important;
+        border: 1px solid rgba(255,255,255,0.1) !important;
+        transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+        background-color: #1E1E24 !important;
+        color: #E2E2E2 !important;
+    }
+    .stButton>button:hover {
+        transform: translateY(-3px) !important;
+        box-shadow: 0 8px 20px rgba(0, 113, 227, 0.2) !important;
+        border-color: #0071e3 !important;
+        color: #FFFFFF !important;
+    }
     
-    /* Caixas de Info/Success/Error com cantos mais suaves */
+    /* Botões Primários (Ação Principal) */
+    .stButton>button[data-baseweb="button"].st-emotion-cache-1r6slb0 {
+        background: linear-gradient(135deg, #0071e3, #005bb5) !important;
+        color: white !important;
+        border: none !important;
+        box-shadow: 0 4px 10px rgba(0, 113, 227, 0.3) !important;
+    }
+    .stButton>button[data-baseweb="button"].st-emotion-cache-1r6slb0:hover {
+        transform: translateY(-3px) !important;
+        box-shadow: 0 8px 25px rgba(0, 113, 227, 0.5) !important;
+    }
+
+    /* 5. Cartões de Métricas (Efeito Premium Dashboard) */
+    div[data-testid="metric-container"] {
+        background: linear-gradient(145deg, #1A1C23, #121418);
+        border: 1px solid #2A2D35;
+        padding: 20px 25px;
+        border-radius: 12px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        transition: all 0.3s ease;
+    }
+    div[data-testid="metric-container"]:hover {
+        transform: translateY(-5px);
+        border-color: #0071e3;
+        box-shadow: 0 8px 25px rgba(0, 113, 227, 0.15);
+    }
+    div[data-testid="metric-container"] > div > div > div {
+        color: #8E8E93 !important; /* Cor do label da métrica */
+        font-weight: 500 !important;
+    }
+    
+    /* 6. Tabs (Separadores) Modernos estilo Navegador */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 10px;
+        background-color: transparent;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 45px;
+        background-color: #1A1C23;
+        border-radius: 8px 8px 0px 0px;
+        padding: 10px 20px;
+        border: 1px solid #2A2D35;
+        border-bottom: none;
+        color: #8E8E93;
+        font-weight: 500;
+        transition: background-color 0.3s ease;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #0071e3 !important;
+        color: white !important;
+        border-color: #0071e3 !important;
+        font-weight: 600 !important;
+    }
+    
+    /* 7. Caixas de Alerta e Info Suaves */
     div.stAlert {
-        border-radius: 8px;
-        border: none;
+        border-radius: 10px !important;
+        border: 1px solid rgba(255,255,255,0.05) !important;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important;
+        backdrop-filter: blur(10px);
+    }
+
+    /* 8. Estilo da Sidebar */
+    [data-testid="stSidebar"] {
+        background-color: #121418 !important;
+        border-right: 1px solid #23262E !important;
+    }
+    
+    /* 9. Área de Upload (Drag & Drop) */
+    [data-testid="stFileUploadDropzone"] {
+        border: 2px dashed #3A3D45 !important;
+        border-radius: 12px !important;
+        background-color: #181A20 !important;
+        transition: all 0.3s ease !important;
+    }
+    [data-testid="stFileUploadDropzone"]:hover {
+        border-color: #0071e3 !important;
+        background-color: #1E222B !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -594,7 +665,7 @@ def generate_acc_subject_code(file_bytes, file_name):
 # INTERFACE STREAMLIT - ABAS PRINCIPAIS
 # =====================================================================
 st.title("🛠️ Netbiis Automation Portal")
-st.markdown("Automate workflow structures, generate code, and structure ZIP packages in seconds.")
+st.markdown("<p style='color: #8E8E93; font-size: 16px;'>Automate workflow structures, generate code, and compile package deliverables seamlessly.</p>", unsafe_allow_html=True)
 st.divider()
 
 tab1, tab2 = st.tabs(["⚙️ Waterfall & QA (JSON/ZIP)", "✉️ ACC Subject Generator"])
@@ -614,8 +685,15 @@ with tab1:
         segmentos_lista = jd.get('segmentos_ativos', [])
         segmentos_txt = ', '.join(segmentos_lista) if segmentos_lista else 'None'
         
-        # Banner de status visualmente destacado
-        st.success(f"**🟢 Active Ticket:** {ticket_id} ({status_txt}) &nbsp;&nbsp;|&nbsp;&nbsp; **LOB:** {lob_txt} &nbsp;&nbsp;|&nbsp;&nbsp; **Deploy:** {data_deploy_texto} &nbsp;&nbsp;|&nbsp;&nbsp; **Segments:** {segmentos_txt}")
+        # Banner de status visualmente destacado com fundo suave
+        st.markdown(f"""
+        <div style="background-color: rgba(48, 209, 88, 0.1); border-left: 4px solid #30D158; padding: 15px; border-radius: 8px; margin-bottom: 25px;">
+            <span style="color: #30D158; font-weight: 600;">🟢 Active Ticket:</span> {ticket_id} ({status_txt}) &nbsp;|&nbsp; 
+            <span style="color: #E2E2E2; font-weight: 600;">LOB:</span> {lob_txt} &nbsp;|&nbsp; 
+            <span style="color: #E2E2E2; font-weight: 600;">Deploy:</span> {data_deploy_texto} &nbsp;|&nbsp; 
+            <span style="color: #E2E2E2; font-weight: 600;">Segments:</span> {segmentos_txt}
+        </div>
+        """, unsafe_allow_html=True)
 
     st.markdown("### 1. Upload Matrix File")
     st.write("Upload the Excel matrix to audit, parse the waterfall, and generate the structural payload.")
@@ -645,7 +723,7 @@ with tab1:
                 json_objects = process_data(df)
                 
                 # --- METADATA EM CARDS ---
-                st.markdown("### 📊 Campaign Metadata")
+                st.markdown("<br><h3>📊 Campaign Metadata</h3>", unsafe_allow_html=True)
                 colA, colB, colC = st.columns(3)
                 
                 with colA:
@@ -664,7 +742,7 @@ with tab1:
                         st.info(note)
 
                 # --- AUDITORIA ---
-                st.markdown("### 🕵️‍♂️ Matrix Audit")
+                st.markdown("<br><h3>🕵️‍♂️ Matrix Audit</h3>", unsafe_allow_html=True)
                 
                 errors = []
                 warnings = []
@@ -701,7 +779,7 @@ with tab1:
                     st.success("✅ Flawless matrix! No structural anomalies found.")
 
                 # --- WATERFALL OVERVIEW EM CARDS ---
-                st.markdown("### 📈 Waterfall Overview")
+                st.markdown("<br><h3>📈 Waterfall Overview</h3>", unsafe_allow_html=True)
                 
                 total_segments = len(json_objects)
                 total_ab_tests = sum(1 for obj in json_objects if obj.get("Split") == 0.5) // 2
@@ -723,7 +801,7 @@ with tab1:
                     st.bar_chart(chart_data.set_index("Segment"))
 
                 # --- EXCLUSIONS ---
-                st.markdown("### 🛑 Targeting Rules")
+                st.markdown("<br><h3>🛑 Targeting Rules</h3>", unsafe_allow_html=True)
                 inc_col, exc_col = st.columns(2)
                 
                 with inc_col:
@@ -751,7 +829,7 @@ with tab1:
                 shareable_link = f"https://upgraded-guide-bxpthdptstyfwaor2naznv.streamlit.app?data={encoded_data}"
 
                 # --- GAVETAS (EXPANDERS) PARA MANTER O ECRÃ LIMPO ---
-                st.markdown("### 💻 Output Deliverables")
+                st.markdown("<br><h3>💻 Output Deliverables</h3>", unsafe_allow_html=True)
                 
                 with st.expander("🔗 Open Shareable Link (For Workflow Configurator)", expanded=True):
                     st.info("Copy the link below and paste it into the Jira ticket or spreadsheet. Anyone clicking it will see the JSON layout.")
