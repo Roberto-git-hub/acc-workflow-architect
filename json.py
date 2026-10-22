@@ -371,7 +371,7 @@ def process_data(df):
     return final_json_data
 
 # =====================================================================
-# FUNÇÃO: GERADOR DE SUBJECTS ACC (Com Suporte a Excel Inteligente 2.0)
+# FUNÇÃO: GERADOR DE SUBJECTS ACC (Com Suporte a Excel Inteligente 3.0)
 # =====================================================================
 def generate_acc_subject_code(file_bytes, file_name):
     temp_subjects = []
@@ -381,7 +381,7 @@ def generate_acc_subject_code(file_bytes, file_name):
         try:
             xls = pd.ExcelFile(io.BytesIO(file_bytes))
             
-            # 1. Varre TODAS as abas da planilha (resolve o problema de estar noutra aba)
+            # Varre TODAS as abas
             for sheet in xls.sheet_names:
                 df = pd.read_excel(xls, sheet_name=sheet, header=None)
                 
@@ -390,45 +390,47 @@ def generate_acc_subject_code(file_bytes, file_name):
                         if pd.notna(val):
                             val_str = str(val).strip()
                             
-                            # Padrão A: SL e Texto na MESMA célula (Ex: "SL_1:\n[Name]...")
-                            match_same_cell = re.match(r'^\s*(SL[_-]?\d+)[:\-\s\n]+(.+)', val_str, re.IGNORECASE | re.DOTALL)
+                            # Padrão A: SL e Texto misturados na mesma célula, em qualquer posição
+                            # Ex: "Qualquer coisa \n SL_1: \n [Name]..."
+                            match_same = re.search(r'(SL[\s_-]?\d+)[\s:\-]+(.+)', val_str, re.IGNORECASE | re.DOTALL)
                             
-                            # Padrão B: Apenas o código na célula (Ex: "SL1")
-                            match_exact = re.match(r'^\s*(SL[_-]?\d+)\s*$', val_str, re.IGNORECASE)
+                            # Padrão B: Célula tem apenas o código SL (Ex: " SL_1 ")
+                            match_exact = re.search(r'^\s*(SL[\s_-]?\d+)\s*$', val_str, re.IGNORECASE)
                             
                             sl_code = None
                             subject_text = ""
                             
-                            if match_same_cell:
-                                sl_code = match_same_cell.group(1).strip()
-                                subject_text = match_same_cell.group(2).strip()
+                            if match_same:
+                                sl_code = match_same.group(1).strip()
+                                subject_text = match_same.group(2).strip()
                             elif match_exact:
                                 sl_code = match_exact.group(1).strip()
-                                # Tenta na célula à direita (horizontal)
+                                # 1. Tenta pegar o texto na célula imediatamente à direita
                                 if i + 1 < len(row.values) and pd.notna(row.values[i+1]):
                                     subject_text = str(row.values[i+1]).strip()
-                                # Se a direita estiver vazia, tenta na célula de baixo (vertical)
+                                # 2. Se não houver nada à direita, tenta pegar na célula de baixo
                                 elif idx + 1 < len(df) and pd.notna(df.iloc[idx+1, i]):
                                     subject_text = str(df.iloc[idx+1, i]).strip()
                                     
                             if sl_code and subject_text:
-                                # Remove quebras de linha ocultas para não quebrar o código JS
+                                # Remove quebras de linha que possam quebrar o JavaScript
                                 subject_text = re.sub(r'\s+', ' ', subject_text)
-                                normalized_code = re.sub(r'^SL[_-]?', 'SL_', sl_code, flags=re.IGNORECASE).upper()
+                                # Padroniza o código (ex: "SL 1" ou "SL1" vira "SL_1")
+                                normalized_code = re.sub(r'^SL[\s_-]?', 'SL_', sl_code, flags=re.IGNORECASE).upper()
                                 
                                 temp_subjects.append({
-                                    "originalCode": sl_code,
+                                    "originalCode": sl_code.replace(" ", ""),
                                     "normalizedCode": normalized_code,
                                     "text": subject_text
                                 })
         except Exception as e:
-            return None, f"Erro ao ler a URL Matrix do Excel: {e}"
+            return None, f"Erro ao ler o Excel: {e}"
             
     # Se for TXT/CSV (Formato Antigo: SL1; [Name]...)
     else:
         file_content = file_bytes.decode('utf-8')
         lines = file_content.splitlines()
-        line_regex = re.compile(r'^\s*(SL[_-]?\d+)\s*;\s*(.*)', re.IGNORECASE)
+        line_regex = re.compile(r'^\s*(SL[\s_-]?\d+)\s*;\s*(.*)', re.IGNORECASE)
         
         for line in lines:
             line = line.strip()
@@ -437,10 +439,10 @@ def generate_acc_subject_code(file_bytes, file_name):
             if match:
                 original_code = match.group(1).strip()
                 subject_text = match.group(2).strip()
-                normalized_code = re.sub(r'^SL[_-]?', 'SL_', original_code, flags=re.IGNORECASE).upper()
+                normalized_code = re.sub(r'^SL[\s_-]?', 'SL_', original_code, flags=re.IGNORECASE).upper()
                 if subject_text:
                     temp_subjects.append({
-                        "originalCode": original_code,
+                        "originalCode": original_code.replace(" ", ""),
                         "normalizedCode": normalized_code,
                         "text": subject_text
                     })
