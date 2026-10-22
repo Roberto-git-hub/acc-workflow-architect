@@ -105,9 +105,10 @@ if st.sidebar.button("Puxar Dados do Ticket"):
                             for linha in linhas:
                                 match = re.search(r'_WK\d+_([A-Za-z0-9_]+)', linha.strip())
                                 if match:
-                                    seg = match.group(1).strip()
+                                    # Força tudo para maiúsculas para evitar Hot vs HOT
+                                    seg = match.group(1).strip().upper() 
                                     if seg:
-                                        seg = re.sub(r'(?i)_v\d+$', '', seg)
+                                        seg = re.sub(r'_V\d+$', '', seg)
                                         segmentos_encontrados.add(seg)
                 
                 st.session_state['jira_dados'] = {
