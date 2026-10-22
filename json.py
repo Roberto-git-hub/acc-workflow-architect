@@ -171,7 +171,7 @@ def extract_metadata(file_bytes, file_name, sheet_name=None):
 
     meta = {
         "campaign_name": "", "deployment_date": "", "user": "", "cid": "",
-        "notes": [], "include": [], "exclude": []
+        "notes": [], "include": [], "exclude": [], "audience": [] # <-- Adicionado audience
     }
     notes_col_idx = None
     current_mode = None 
@@ -187,11 +187,14 @@ def extract_metadata(file_bytes, file_name, sheet_name=None):
         if "deployment name" in col0:
             meta["campaign_name"] = re.sub(r'(?i)_v2$', '', col1).strip()
             for i, val in enumerate(row.values):
-                if str(val).strip().lower() == 'notes':
-                    notes_col_idx = i
+                if str(val).strip().lower() == 'notes': notes_col_idx = i
         elif "deployment date" in col0: meta["deployment_date"] = col1
         elif col0 == "user": meta["user"] = col1
         elif col0 == "cid": meta["cid"] = re.sub(r'(?i)_segment$', '', col1).strip()
+        elif "audience" in col0: # <-- Nova Regra para Audience
+            current_mode = "audience"
+            vals = [str(x).strip() for x in row.values[1:] if pd.notna(x) and str(x).strip().lower() != 'nan']
+            if vals: meta["audience"].append(" | ".join(vals))
         elif "only include" in col0:
             current_mode = "include"
             vals = [str(x).strip() for x in row.values[1:] if pd.notna(x) and str(x).strip().lower() != 'nan']
@@ -209,10 +212,8 @@ def extract_metadata(file_bytes, file_name, sheet_name=None):
         if notes_col_idx is not None and len(row.values) > notes_col_idx:
             note_val = str(row.values[notes_col_idx]).strip()
             if pd.notna(row.values[notes_col_idx]) and note_val and note_val.lower() not in ['nan', 'notes']:
-                if note_val not in meta["notes"]:
-                    meta["notes"].append(note_val)
+                if note_val not in meta["notes"]: meta["notes"].append(note_val)
     return meta
-
 @st.cache_data
 def load_and_clean_data(file_bytes, file_name, sheet_name=None):
     if file_name.endswith('.csv'):
@@ -568,18 +569,30 @@ with tab1:
                     chart_data = pd.DataFrame({"Segment": [obj.get("CellName") for obj in json_objects], "Volume": [float(obj.get("DAGSCount", 0)) for obj in json_objects]})
                     st.bar_chart(chart_data.set_index("Segment"))
 
+                # --- TARGETING RULES ---
                 st.markdown("<br><h3>🛑 Targeting Rules</h3>", unsafe_allow_html=True)
+                
+                # Exibe a Audiência (Público Alvo) numa caixa de destaque larga
+                if meta.get("audience"):
+                    st.info("**👥 AUDIENCE SELECTION:**\n" + "\n".join([f"- {item}" for item in meta["audience"]]))
+                
                 inc_col, exc_col = st.columns(2)
+                
                 with inc_col:
                     st.success("**🎯 ONLY INCLUDE (Global Filters):**")
                     if meta.get("include"):
-                        for item in meta["include"]: st.write(f"- {item}")
-                    else: st.write("None")
+                        for item in meta["include"]:
+                            st.write(f"- {item}")
+                    else:
+                        st.write("None")
+                        
                 with exc_col:
                     st.error("**🚫 EXCLUDE (Suppressions):**")
                     if meta.get("exclude"):
-                        for item in meta["exclude"]: st.write(f"- {item}")
-                    else: st.write("None")
+                        for item in meta["exclude"]:
+                            st.write(f"- {item}")
+                    else:
+                        st.write("None")
 
                 for obj in json_objects: obj.pop("_Source", None)
                     
