@@ -41,6 +41,13 @@ if 'data' in st.query_params:
 # =====================================================================
 # MÓDULO 1: INTEGRAÇÃO JIRA API & UI DE LIMPEZA
 # =====================================================================
+import os
+
+# Tenta carregar o logo na barra lateral. Se o ficheiro não for encontrado, o app não quebra.
+if os.path.exists("logo_netbiis.png"):
+    st.sidebar.image("logo_netbiis.png", use_container_width=True)
+    st.sidebar.divider()
+
 st.sidebar.header("🔌 Conexão Jira")
 
 if st.sidebar.button("🔄 Limpar Sessão (Novo Job)"):
@@ -72,6 +79,8 @@ if st.sidebar.button("Puxar Dados do Ticket"):
                 campos = dados_main.get("fields", {})
                 
                 titulo = campos.get("summary", "")
+                status_ticket = campos.get("status", {}).get("name", "Desconhecido") # Puxa o status real do Jira
+                
                 lob_campo = campos.get("customfield_10476", [""])[0] if campos.get("customfield_10476") else ""
                 
                 if lob_campo:
@@ -82,9 +91,10 @@ if st.sidebar.button("Puxar Dados do Ticket"):
                 
                 ano_atual = datetime.datetime.now().year
                 data_deploy = ""
-                match_data = re.search(r'\((\d{1,2})/(\d{1,2})\)', titulo)
+                # Procura qualquer formato de MM/DD no título (com parênteses, traços ou espaços)
+                match_data = re.findall(r'(\d{1,2})/(\d{1,2})', titulo)
                 if match_data:
-                    mes, dia = match_data.groups()
+                    mes, dia = match_data[-1] # Pega a última data encontrada no título
                     data_deploy = f"{dia.zfill(2)}/{mes.zfill(2)}/{ano_atual}"
                 else:
                     data_deploy = datetime.datetime.now().strftime("%d/%m/%Y")
@@ -102,19 +112,26 @@ if st.sidebar.button("Puxar Dados do Ticket"):
                         for comment in comentarios:
                             texto = comment.get("body", "")
                             linhas = texto.split('\n')
+                            
+                            segs_neste_comentario = set()
                             for linha in linhas:
                                 match = re.search(r'_WK\d+_([A-Za-z0-9_]+)', linha.strip())
                                 if match:
-                                    # Força tudo para maiúsculas para evitar Hot vs HOT
-                                    seg = match.group(1).strip().upper() 
+                                    seg = match.group(1).strip().upper()
                                     if seg:
                                         seg = re.sub(r'_V\d+$', '', seg)
-                                        segmentos_encontrados.add(seg)
+                                        segs_neste_comentario.add(seg)
+                            
+                            # Se este comentário tinha segmentos, SUBSTITUI a memória anterior.
+                            # Assim ficamos apenas com a ÚLTIMA lista corrigida e ignoramos o passado.
+                            if segs_neste_comentario:
+                                segmentos_encontrados = segs_neste_comentario
                 
                 st.session_state['jira_dados'] = {
                     "ticket": ticket_input,
                     "lob": str(lob),
                     "titulo": str(titulo),
+                    "status": status_ticket, # Guarda o status
                     "segmentos": sorted(list(segmentos_encontrados)),
                     "data_deploy": data_deploy
                 }
@@ -537,7 +554,10 @@ with tab1:
     if 'jira_dados' in st.session_state:
         jd = st.session_state['jira_dados']
         data_deploy_texto = jd.get('data_deploy', 'N/A')
-        st.info(f"**Ticket Ativo:** {jd['ticket']} | **LOB:** {jd['lob']} | **Deploy:** {data_deploy_texto} | **Segmentos:** {', '.join(jd['segmentos']) if jd['segmentos'] else 'Nenhum'}")
+        status_txt = jd.get('status', 'N/A')
+        
+        # Agora mostra o status real (ex: Fechada, Em Andamento) e os segmentos limpos
+        st.info(f"**Ticket:** {jd['ticket']} ({status_txt}) | **LOB:** {jd['lob']} | **Deploy:** {data_deploy_texto} | **Segmentos:** {', '.join(jd['segmentos']) if jd['segmentos'] else 'Nenhum'}")
 
     st.write("Faça o upload da planilha para auditar, gerar a estrutura JSON e o Link Direto.")
 
