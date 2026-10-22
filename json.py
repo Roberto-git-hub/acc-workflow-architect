@@ -714,7 +714,7 @@ with tab2:
         colA, colB, colC = st.columns(3)
         with colA: jd['status'] = st.text_input("Ticket Status:", jd.get('status', ''))
         with colB: jd['data_deploy'] = st.text_input("Deployment Date:", jd.get('data_deploy', ''))
-        with colC: jd['reviewer'] = st.text_input("QA Reviewer:", jd.get('reviewer', ''))
+        with colC: jd['reviewer'] = st.text_input("Reviewer:", jd.get('reviewer', ''))
         
         selecionados = st.multiselect(
             "Segments (Remove unwanted ones):",
