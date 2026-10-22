@@ -135,16 +135,21 @@ if st.sidebar.button("Puxar Dados do Ticket"):
         st.sidebar.warning("Digite um Ticket ID válido.")
 
 # --- NOVO: MENU DE AJUSTE FINO NA BARRA LATERAL ---
-if 'jira_dados' in st.session_state:
+with tab1:
+    st.header("⚙️ Segment-to-JSON Converter")
+    
+    if 'jira_dados' in st.session_state:
         jd = st.session_state['jira_dados']
         
-        # Puxa os dados limpos diretamente do menu lateral
+        # O uso de .get() protege o código contra KeyError (memórias antigas)
+        ticket_id = jd.get('ticket', 'N/A')
+        lob_txt = jd.get('lob', 'N/A')
         status_txt = jd.get('status', 'N/A')
         data_deploy_texto = jd.get('data_deploy', 'N/A')
         segmentos_lista = jd.get('segmentos_ativos', [])
         segmentos_txt = ', '.join(segmentos_lista) if segmentos_lista else 'Nenhum'
         
-        st.info(f"**Ticket:** {jd['ticket']} ({status_txt}) | **LOB:** {jd['lob']} | **Deploy:** {data_deploy_texto} | **Segmentos:** {segmentos_txt}")
+        st.info(f"**Ticket:** {ticket_id} ({status_txt}) | **LOB:** {lob_txt} | **Deploy:** {data_deploy_texto} | **Segmentos:** {segmentos_txt}")
 
 # =====================================================================
 # FUNÇÕES DE PROCESSAMENTO (Coordenadora)
