@@ -661,16 +661,25 @@ with tab2:
                             data_deploy = f"{dia.zfill(2)}/{mes.zfill(2)}/{ano_atual}"
                         else: data_deploy = datetime.datetime.now().strftime("%m/%d/%Y")
                         
+                        # --- NOVO: Captura do dono do ticket principal como fallback ---
+                        assignee_main = campos.get("assignee")
+                        qa_reviewer_name = assignee_main.get("displayName", "N/A") if assignee_main else "N/A"
+                        
                         subtasks = campos.get("subtasks", [])
                         segmentos_encontrados = set()
                         
                         for sub in subtasks:
                             sub_key = sub.get("key")
-                            url_comments = f"{JIRA_URL}/rest/api/2/issue/{sub_key}/comment"
-                            resp_comments = requests.get(url_comments, headers=headers, auth=auth)
+                            # NOVO: Extrai a sub-task completa via API
+                            url_sub = f"{JIRA_URL}/rest/api/2/issue/{sub_key}"
+                            resp_sub = requests.get(url_sub, headers=headers, auth=auth)
                             
-                            if resp_comments.status_code == 200:
-                                comentarios = resp_comments.json().get("comments", [])
+                            if resp_sub.status_code == 200:
+                                sub_data = resp_sub.json()
+                                sub_fields = sub_data.get("fields", {})
+                                
+                                # 1. Extração de Segmentos
+                                comentarios = sub_fields.get("comment", {}).get("comments", [])
                                 for comment in comentarios:
                                     linhas = comment.get("body", "").split('\n')
                                     for linha in linhas:
@@ -678,11 +687,19 @@ with tab2:
                                         if match:
                                             seg = match.group(1).strip().upper()
                                             if seg: segmentos_encontrados.add(re.sub(r'_V\d+$', '', seg))
+                                            
+                                # 2. Procura Assignee Específico de QA/Proof
+                                sub_summary = sub_fields.get("summary", "").upper()
+                                if "QA" in sub_summary or "REVIEW" in sub_summary or "PROOF" in sub_summary:
+                                    sub_assignee = sub_fields.get("assignee")
+                                    if sub_assignee:
+                                        qa_reviewer_name = sub_assignee.get("displayName", qa_reviewer_name)
                         
                         st.session_state['jira_dados'] = {
                             "ticket": ticket_input_tab, "lob": str(lob), "titulo": str(titulo),
                             "status": status_ticket, "segmentos_originais": sorted(list(segmentos_encontrados)),
-                            "segmentos_ativos": sorted(list(segmentos_encontrados)), "data_deploy": data_deploy
+                            "segmentos_ativos": sorted(list(segmentos_encontrados)), "data_deploy": data_deploy,
+                            "reviewer": qa_reviewer_name
                         }
                         st.toast("✅ Metadata synchronized successfully!", icon="✅")
                     else: st.error(f"Error {resp_main.status_code}: Ticket not found.")
@@ -693,9 +710,11 @@ with tab2:
         jd = st.session_state['jira_dados']
         
         st.markdown("<br><h4>✏️ 2. Job Fine-Tuning</h4>", unsafe_allow_html=True)
-        colA, colB = st.columns(2)
+        # NOVO: 3 colunas para acomodar o Reviewer
+        colA, colB, colC = st.columns(3)
         with colA: jd['status'] = st.text_input("Ticket Status:", jd.get('status', ''))
         with colB: jd['data_deploy'] = st.text_input("Deployment Date:", jd.get('data_deploy', ''))
+        with colC: jd['reviewer'] = st.text_input("QA Reviewer:", jd.get('reviewer', ''))
         
         selecionados = st.multiselect(
             "Segments (Remove unwanted ones):",
@@ -710,7 +729,8 @@ with tab2:
             lob = jd['lob']
             segmentos = jd.get('segmentos_ativos', ["N_A"]) if jd.get('segmentos_ativos') else ["N_A"]
             data_deploy = jd.get('data_deploy', datetime.datetime.now().strftime("%m/%d/%Y"))
-            reviewer = "Roberto"
+            # NOVO: Puxa o reviewer dinâmico
+            reviewer = jd.get('reviewer', 'N/A')
             
             zip_buffer = io.BytesIO()
             my_bar = st.progress(10, text="Initializing folder structuring...")
@@ -766,6 +786,7 @@ with tab2:
                                 except: pass
                             
                         ws_target.title = nome_aba
+                        # NOVO: Injeção no Excel limpa
                         ws_target["F2"] = f"EX; {job_id}"; ws_target["F3"] = f"EX; {seg_name}"; ws_target["F4"] = reviewer; ws_target["F6"] = datetime.datetime.now().strftime("%m/%d/%Y")
                     
                     rev_stream = io.BytesIO(); wb_rev.save(rev_stream)
@@ -787,8 +808,8 @@ with tab2:
                     for sheet_name in wb_lc.sheetnames:
                         if sheet_name != ws_temp_lc.title: del wb_lc[sheet_name]
                             
-                    for i, seg in enumerate(segmentos):
-                        seg_name = "N/A" if seg == "N_A" else seg
+                    for i, enumerate_seg in enumerate(segmentos):
+                        seg_name = "N/A" if enumerate_seg == "N_A" else enumerate_seg
                         nome_aba = re.sub(r'[/\\?*\[\]]', '', job_id if seg_name == "N/A" else f"{job_id} - {seg_name}")[:31]
                         
                         if i == 0: ws_target = ws_temp_lc
@@ -801,7 +822,8 @@ with tab2:
                                 except: pass
                             
                         ws_target.title = nome_aba
-                        ws_target["D1"] = f"Reviewed by: {reviewer} Vasconcelos"; ws_target["D2"] = f"LOB:{lob}"; ws_target["D3"] = f"JIRA Ticket: {job_id}"
+                        # NOVO: Injeção no Excel limpa
+                        ws_target["D1"] = f"Reviewed by: {reviewer}"; ws_target["D2"] = f"LOB:{lob}"; ws_target["D3"] = f"JIRA Ticket: {job_id}"
                         ws_target["D4"] = f"Segment: {seg_name}"; ws_target["D5"] = data_deploy
                         
                     lc_stream = io.BytesIO(); wb_lc.save(lc_stream)
