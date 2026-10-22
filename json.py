@@ -41,8 +41,6 @@ if 'data' in st.query_params:
 # =====================================================================
 # MÓDULO 1: INTEGRAÇÃO JIRA API & UI DE LIMPEZA
 # =====================================================================
-import os
-
 if os.path.exists("logo_netbiis.png"):
     st.sidebar.image("logo_netbiis.png", use_container_width=True)
     st.sidebar.divider()
@@ -134,22 +132,22 @@ if st.sidebar.button("Puxar Dados do Ticket"):
     else:
         st.sidebar.warning("Digite um Ticket ID válido.")
 
-# --- NOVO: MENU DE AJUSTE FINO NA BARRA LATERAL ---
-with tab1:
-    st.header("⚙️ Segment-to-JSON Converter")
+# --- MENU DE AJUSTE FINO NA BARRA LATERAL ---
+if 'jira_dados' in st.session_state:
+    st.sidebar.divider()
+    st.sidebar.subheader("✏️ Ajuste Fino do Job")
+    jd = st.session_state['jira_dados']
     
-    if 'jira_dados' in st.session_state:
-        jd = st.session_state['jira_dados']
-        
-        # O uso de .get() protege o código contra KeyError (memórias antigas)
-        ticket_id = jd.get('ticket', 'N/A')
-        lob_txt = jd.get('lob', 'N/A')
-        status_txt = jd.get('status', 'N/A')
-        data_deploy_texto = jd.get('data_deploy', 'N/A')
-        segmentos_lista = jd.get('segmentos_ativos', [])
-        segmentos_txt = ', '.join(segmentos_lista) if segmentos_lista else 'Nenhum'
-        
-        st.info(f"**Ticket:** {ticket_id} ({status_txt}) | **LOB:** {lob_txt} | **Deploy:** {data_deploy_texto} | **Segmentos:** {segmentos_txt}")
+    jd['status'] = st.sidebar.text_input("Status do Ticket:", jd.get('status', ''))
+    jd['data_deploy'] = st.sidebar.text_input("Data de Deploy:", jd.get('data_deploy', ''))
+    
+    selecionados = st.sidebar.multiselect(
+        "Segmentos (Remova o lixo clicando no X):",
+        options=jd.get('segmentos_originais', []),
+        default=jd.get('segmentos_ativos', [])
+    )
+    st.session_state['jira_dados']['segmentos_ativos'] = selecionados
+
 
 # =====================================================================
 # FUNÇÕES DE PROCESSAMENTO (Coordenadora)
@@ -399,7 +397,7 @@ def process_data(df):
     return final_json_data
 
 # =====================================================================
-# FUNÇÃO: GERADOR DE SUBJECTS ACC (Com Suporte a Excel Inteligente 4.0)
+# FUNÇÃO: GERADOR DE SUBJECTS ACC
 # =====================================================================
 def generate_acc_subject_code(file_bytes, file_name):
     temp_subjects = []
@@ -409,7 +407,6 @@ def generate_acc_subject_code(file_bytes, file_name):
         try:
             xls = pd.ExcelFile(io.BytesIO(file_bytes))
             
-            # Varre TODAS as abas
             for sheet in xls.sheet_names:
                 df = pd.read_excel(xls, sheet_name=sheet, header=None)
                 
@@ -418,38 +415,30 @@ def generate_acc_subject_code(file_bytes, file_name):
                         if pd.notna(val):
                             val_str = str(val).strip()
                             
-                            # Procura qualquer "SL" seguido de um número (ex: SL1, SL_1, SL-1, SL 1)
                             sl_match = re.search(r'(SL[\s_-]?\d+)', val_str, re.IGNORECASE)
                             
                             if sl_match:
                                 sl_code = sl_match.group(1).strip()
                                 
-                                # Extrai tudo o que vem DEPOIS do código na mesma célula
                                 text_after = val_str[sl_match.end():]
-                                # Remove "lixo" (dois pontos, traços, espaços, quebras de linha) no início do texto
                                 text_after = re.sub(r'^[\s:\-]+', '', text_after).strip()
                                 
                                 subject_text = ""
                                 
-                                # Padrão A: O texto estava na mesma célula que o código
                                 if text_after:
                                     subject_text = text_after
-                                # Padrão B: A célula só tinha o código, o texto está noutra célula
                                 else:
-                                    # 1. Tenta a célula imediatamente à direita
                                     if i + 1 < len(row.values) and pd.notna(row.values[i+1]):
                                         right_val = str(row.values[i+1]).strip()
                                         if right_val:
                                             subject_text = right_val
                                     
-                                    # 2. Se a direita estiver vazia, tenta a célula de baixo
                                     if not subject_text and idx + 1 < len(df) and pd.notna(df.iloc[idx+1, i]):
                                         bottom_val = str(df.iloc[idx+1, i]).strip()
                                         if bottom_val:
                                             subject_text = bottom_val
                                 
                                 if subject_text:
-                                    # Limpa quebras de linha (Alt+Enter) que possam quebrar o JavaScript
                                     subject_text = re.sub(r'\s+', ' ', subject_text)
                                     normalized_code = re.sub(r'^SL[\s_-]?', 'SL_', sl_code, flags=re.IGNORECASE).upper()
                                     
@@ -461,7 +450,7 @@ def generate_acc_subject_code(file_bytes, file_name):
         except Exception as e:
             return None, f"Erro ao ler o Excel: {e}"
             
-    # Se for TXT/CSV (Formato Antigo: SL1; [Name]...)
+    # Se for TXT/CSV
     else:
         file_content = file_bytes.decode('utf-8')
         lines = file_content.splitlines()
@@ -482,7 +471,6 @@ def generate_acc_subject_code(file_bytes, file_name):
                         "text": subject_text
                     })
                     
-    # Desduplica mantendo a última ocorrência e ordena
     unique_map = {item["normalizedCode"]: item for item in temp_subjects}
     
     def sort_key(item):
@@ -494,7 +482,6 @@ def generate_acc_subject_code(file_bytes, file_name):
     if not subject_lines:
         return None, "Nenhum código 'SL' e Subject encontrados no ficheiro."
         
-    # Inicia a montagem do código E4X/JS
     code = "<%\n"
     code += "var nameProper = recipient.firstName ? recipient.firstName.charAt(0).toUpperCase() + recipient.firstName.substring(1).toLowerCase() : \"\";\n"
     code += "var subject = \"\";\n"
@@ -563,10 +550,15 @@ with tab1:
     
     if 'jira_dados' in st.session_state:
         jd = st.session_state['jira_dados']
-        st.info(f"**Ticket:** {jd['ticket']} ({jd.get('status', '')}) | **LOB:** {jd['lob']} | **Deploy:** {jd.get('data_deploy', '')} | **Segmentos:** {', '.join(jd['segmentos_ativos']) if jd.get('segmentos_ativos') else 'Nenhum'}")
         
-        # Agora mostra o status real (ex: Fechada, Em Andamento) e os segmentos limpos
-        st.info(f"**Ticket:** {jd['ticket']} ({status_txt}) | **LOB:** {jd['lob']} | **Deploy:** {data_deploy_texto} | **Segmentos:** {', '.join(jd['segmentos']) if jd['segmentos'] else 'Nenhum'}")
+        ticket_id = jd.get('ticket', 'N/A')
+        lob_txt = jd.get('lob', 'N/A')
+        status_txt = jd.get('status', 'N/A')
+        data_deploy_texto = jd.get('data_deploy', 'N/A')
+        segmentos_lista = jd.get('segmentos_ativos', [])
+        segmentos_txt = ', '.join(segmentos_lista) if segmentos_lista else 'Nenhum'
+        
+        st.info(f"**Ticket:** {ticket_id} ({status_txt}) | **LOB:** {lob_txt} | **Deploy:** {data_deploy_texto} | **Segmentos:** {segmentos_txt}")
 
     st.write("Faça o upload da planilha para auditar, gerar a estrutura JSON e o Link Direto.")
 
@@ -739,7 +731,6 @@ with tab1:
             job_id = jd['ticket']
             lob = jd['lob']
             
-            # Puxa apenas os segmentos que você deixou selecionados no menu
             segmentos = jd.get('segmentos_ativos', ["N_A"]) if jd.get('segmentos_ativos') else ["N_A"]
             
             data_hoje = datetime.datetime.now().strftime("%d/%m/%Y")
@@ -895,14 +886,12 @@ with tab2:
     st.header("✉️ ACC Subject Line Code Generator")
     st.write("Faça o upload da sua **URL Matrix (.xlsx)** ou do ficheiro CSV/TXT com os subjects.")
     
-    # 1. Atualizado: Aceita XLSX nativamente agora!
     uploaded_sl_file = st.file_uploader("Selecione a Matrix ou Ficheiro", type=["xlsx", "xls", "csv", "txt"], key="sl_uploader")
     
     if uploaded_sl_file is not None:
         file_bytes = uploaded_sl_file.getvalue()
         file_name = uploaded_sl_file.name
         
-        # 2. Atualizado: Passa os bytes brutos para o motor ler o Excel
         parsed_data, generated_code = generate_acc_subject_code(file_bytes, file_name)
         
         if parsed_data:
