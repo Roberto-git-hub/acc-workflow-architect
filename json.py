@@ -72,8 +72,18 @@ if st.sidebar.button("Puxar Dados do Ticket"):
                 dados_main = resp_main.json()
                 campos = dados_main.get("fields", {})
                 
-                lob = campos.get("customfield_10476", [""])[0] if campos.get("customfield_10476") else "N/A"
                 titulo = campos.get("summary", "")
+                
+                # Tenta pegar a LOB do campo oficial. Se vier vazio, "pesca" a primeira palavra do título
+                lob_campo = campos.get("customfield_10476", [""])[0] if campos.get("customfield_10476") else ""
+                
+                if lob_campo:
+                    lob = str(lob_campo)
+                else:
+                    # Fatiamento: divide o título pelos espaços e pega o item zero (Ex: "MX MB_PUB..." -> "MX")
+                    lob_pescado = titulo.split(" ")[0] if titulo else "N/A"
+                    # Remove eventuais caracteres especiais (como colchetes ou traços) que possam vir colados na sigla
+                    lob = re.sub(r'[^A-Za-z0-9]', '', lob_pescado)
                 
                 ano_atual = datetime.datetime.now().year
                 data_deploy = ""
