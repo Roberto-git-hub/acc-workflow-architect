@@ -379,41 +379,32 @@ def generate_acc_subject_code(file_bytes, file_name):
     # Se for um Excel (URL Matrix)
     if file_name.endswith(('.xlsx', '.xls')):
         try:
-            df = pd.read_excel(io.BytesIO(file_bytes))
+            # Lemos o Excel sem cabeçalho para varrer a grelha livremente
+            df = pd.read_excel(io.BytesIO(file_bytes), header=None)
             
-            # Varre linha a linha procurando o SL e o Subject
+            # Varre linha a linha procurando todos os SLs (horizontalmente)
             for idx, row in df.iterrows():
-                sl_code = None
-                sl_col_idx = -1
-                
-                # 1. Localiza a célula que tem o código SL (ex: SL1, SL_2)
                 for i, val in enumerate(row.values):
                     if pd.notna(val):
                         val_str = str(val).strip()
+                        # Se encontrar um código SL (ex: SL1, SL2)
                         if re.match(r'^SL[_-]?\d+$', val_str, re.IGNORECASE):
                             sl_code = val_str
-                            sl_col_idx = i
-                            break
-                
-                # 2. Se achou o SL, procura o Subject na mesma linha
-                if sl_code and sl_col_idx != -1:
-                    subject_text = ""
-                    max_len = 0
-                    for i in range(len(row.values)):
-                        if i != sl_col_idx and pd.notna(row.values[i]):
-                            val_str = str(row.values[i]).strip()
-                            # Assume que o Subject é o texto mais longo da linha (ignorando as URLs da matrix)
-                            if len(val_str) > max_len and "http" not in val_str.lower():
-                                subject_text = val_str
-                                max_len = len(val_str)
-                    
-                    if subject_text:
-                        normalized_code = re.sub(r'^SL[_-]?', 'SL_', sl_code, flags=re.IGNORECASE).upper()
-                        temp_subjects.append({
-                            "originalCode": sl_code,
-                            "normalizedCode": normalized_code,
-                            "text": subject_text
-                        })
+                            
+                            # O Subject Text na Matrix fica imediatamente à direita (coluna i+1)
+                            subject_text = ""
+                            if i + 1 < len(row.values) and pd.notna(row.values[i+1]):
+                                subject_text = str(row.values[i+1]).strip()
+                                # Limpa quebras de linha ocultas do Excel para não quebrar o JS
+                                subject_text = re.sub(r'\s+', ' ', subject_text)
+                            
+                            if subject_text:
+                                normalized_code = re.sub(r'^SL[_-]?', 'SL_', sl_code, flags=re.IGNORECASE).upper()
+                                temp_subjects.append({
+                                    "originalCode": sl_code,
+                                    "normalizedCode": normalized_code,
+                                    "text": subject_text
+                                })
         except Exception as e:
             return None, f"Erro ao ler a URL Matrix do Excel: {e}"
             
