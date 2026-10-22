@@ -171,7 +171,7 @@ def extract_metadata(file_bytes, file_name, sheet_name=None):
 
     meta = {
         "campaign_name": "", "deployment_date": "", "user": "", "cid": "",
-        "notes": [], "include": [], "exclude": [], "audience": [] # <-- Adicionado audience
+        "notes": [], "include": [], "exclude": [], "audience": []
     }
     notes_col_idx = None
     current_mode = None 
@@ -191,21 +191,27 @@ def extract_metadata(file_bytes, file_name, sheet_name=None):
         elif "deployment date" in col0: meta["deployment_date"] = col1
         elif col0 == "user": meta["user"] = col1
         elif col0 == "cid": meta["cid"] = re.sub(r'(?i)_segment$', '', col1).strip()
-        elif "audience" in col0: # <-- Nova Regra para Audience
+        
+        # 1. Identifica exatamente o bloco da Audiência
+        elif "audience selection" in col0: 
             current_mode = "audience"
+            
+        # 2. Aceita "INCLUDE" sozinho sem quebrar o bloco da Audiência
+        elif col0 in ["only include", "include"]: 
+            if current_mode != "audience":
+                current_mode = "include"
             vals = [str(x).strip() for x in row.values[1:] if pd.notna(x) and str(x).strip().lower() != 'nan']
-            if vals: meta["audience"].append(" | ".join(vals))
-        elif "only include" in col0:
-            current_mode = "include"
-            vals = [str(x).strip() for x in row.values[1:] if pd.notna(x) and str(x).strip().lower() != 'nan']
-            if vals: meta["include"].append(" | ".join(vals))
+            if vals: meta[current_mode].append(" | ".join(vals))
+            
         elif "exclude" in col0:
             current_mode = "exclude"
             vals = [str(x).strip() for x in row.values[1:] if pd.notna(x) and str(x).strip().lower() != 'nan']
             if vals: meta["exclude"].append(" | ".join(vals))
+            
         elif col0 == "and" and current_mode:
             vals = [str(x).strip() for x in row.values[1:] if pd.notna(x) and str(x).strip().lower() != 'nan']
             if vals: meta[current_mode].append(" | ".join(vals))
+            
         elif col0 and col0 not in ["and", "criteria:"]:
             current_mode = None
 
