@@ -371,28 +371,74 @@ def process_data(df):
     return final_json_data
 
 # =====================================================================
-# FUNÇÃO: GERADOR DE SUBJECTS ACC
+# FUNÇÃO: GERADOR DE SUBJECTS ACC (Com Suporte a Excel Inteligente)
 # =====================================================================
-def generate_acc_subject_code(file_content):
-    lines = file_content.splitlines()
-    line_regex = re.compile(r'^\s*(SL[_-]?\d+)\s*;\s*(.*)', re.IGNORECASE)
-    
+def generate_acc_subject_code(file_bytes, file_name):
     temp_subjects = []
-    for line in lines:
-        line = line.strip()
-        if not line: continue
-        match = line_regex.match(line)
-        if match:
-            original_code = match.group(1).strip()
-            subject_text = match.group(2).strip()
-            normalized_code = re.sub(r'^SL[_-]?', 'SL_', original_code, flags=re.IGNORECASE).upper()
-            if subject_text:
-                temp_subjects.append({
-                    "originalCode": original_code,
-                    "normalizedCode": normalized_code,
-                    "text": subject_text
-                })
+    
+    # Se for um Excel (URL Matrix)
+    if file_name.endswith(('.xlsx', '.xls')):
+        try:
+            df = pd.read_excel(io.BytesIO(file_bytes))
+            
+            # Varre linha a linha procurando o SL e o Subject
+            for idx, row in df.iterrows():
+                sl_code = None
+                sl_col_idx = -1
                 
+                # 1. Localiza a célula que tem o código SL (ex: SL1, SL_2)
+                for i, val in enumerate(row.values):
+                    if pd.notna(val):
+                        val_str = str(val).strip()
+                        if re.match(r'^SL[_-]?\d+$', val_str, re.IGNORECASE):
+                            sl_code = val_str
+                            sl_col_idx = i
+                            break
+                
+                # 2. Se achou o SL, procura o Subject na mesma linha
+                if sl_code and sl_col_idx != -1:
+                    subject_text = ""
+                    max_len = 0
+                    for i in range(len(row.values)):
+                        if i != sl_col_idx and pd.notna(row.values[i]):
+                            val_str = str(row.values[i]).strip()
+                            # Assume que o Subject é o texto mais longo da linha (ignorando as URLs da matrix)
+                            if len(val_str) > max_len and "http" not in val_str.lower():
+                                subject_text = val_str
+                                max_len = len(val_str)
+                    
+                    if subject_text:
+                        normalized_code = re.sub(r'^SL[_-]?', 'SL_', sl_code, flags=re.IGNORECASE).upper()
+                        temp_subjects.append({
+                            "originalCode": sl_code,
+                            "normalizedCode": normalized_code,
+                            "text": subject_text
+                        })
+        except Exception as e:
+            return None, f"Erro ao ler a URL Matrix do Excel: {e}"
+            
+    # Se for TXT/CSV (Formato Antigo: SL1; [Name]...)
+    else:
+        file_content = file_bytes.decode('utf-8')
+        lines = file_content.splitlines()
+        line_regex = re.compile(r'^\s*(SL[_-]?\d+)\s*;\s*(.*)', re.IGNORECASE)
+        
+        for line in lines:
+            line = line.strip()
+            if not line: continue
+            match = line_regex.match(line)
+            if match:
+                original_code = match.group(1).strip()
+                subject_text = match.group(2).strip()
+                normalized_code = re.sub(r'^SL[_-]?', 'SL_', original_code, flags=re.IGNORECASE).upper()
+                if subject_text:
+                    temp_subjects.append({
+                        "originalCode": original_code,
+                        "normalizedCode": normalized_code,
+                        "text": subject_text
+                    })
+                    
+    # Desduplica mantendo a última ocorrência e ordena
     unique_map = {item["normalizedCode"]: item for item in temp_subjects}
     
     def sort_key(item):
@@ -402,14 +448,15 @@ def generate_acc_subject_code(file_content):
     subject_lines = sorted(unique_map.values(), key=sort_key)
     
     if not subject_lines:
-        return None, "Nenhuma linha válida encontrada no formato 'SLxx; Texto...'."
+        return None, "Nenhum código 'SL' e Subject encontrados no ficheiro."
         
+    # Inicia a montagem do código E4X/JS
     code = "<%\n"
     code += "var nameProper = recipient.firstName ? recipient.firstName.charAt(0).toUpperCase() + recipient.firstName.substring(1).toLowerCase() : \"\";\n"
     code += "var subject = \"\";\n"
     code += "var hasFirstName = recipient.firstName && recipient.firstName !== '' && recipient.firstName !== 'NONAME';\n"
     
-    name_regex = re.compile(r'([Name]\s*,?\s*)', re.IGNORECASE)
+    name_regex = re.compile(r'(\[Name\]\s*,?\s*)', re.IGNORECASE)
     
     for index, line in enumerate(subject_lines):
         original_text = line["text"]
@@ -798,17 +845,20 @@ with tab1:
 # ---------------------------------------------------------------------
 with tab2:
     st.header("✉️ ACC Subject Line Code Generator")
-    st.write("Faça o upload do seu ficheiro CSV ou TXT contendo as subject lines (ex: `SL1; [Name], text...`).")
+    st.write("Faça o upload da sua **URL Matrix (.xlsx)** ou do ficheiro CSV/TXT com os subjects.")
     
-    uploaded_sl_file = st.file_uploader("Selecione o ficheiro de Subjects (.csv, .txt)", type=["csv", "txt"], key="sl_uploader")
+    # 1. Atualizado: Aceita XLSX nativamente agora!
+    uploaded_sl_file = st.file_uploader("Selecione a Matrix ou Ficheiro", type=["xlsx", "xls", "csv", "txt"], key="sl_uploader")
     
     if uploaded_sl_file is not None:
-        file_content = uploaded_sl_file.getvalue().decode('utf-8')
+        file_bytes = uploaded_sl_file.getvalue()
+        file_name = uploaded_sl_file.name
         
-        parsed_data, generated_code = generate_acc_subject_code(file_content)
+        # 2. Atualizado: Passa os bytes brutos para o motor ler o Excel
+        parsed_data, generated_code = generate_acc_subject_code(file_bytes, file_name)
         
         if parsed_data:
-            st.success("Ficheiro lido com sucesso!")
+            st.success("Ficheiro processado com sucesso!")
             
             st.subheader("👀 Preview dos Subjects Encontrados")
             df_preview = pd.DataFrame(parsed_data)[["originalCode", "text"]]
@@ -822,7 +872,7 @@ with tab2:
             st.download_button(
                 label="📥 Descarregar Código (.txt)",
                 data=generated_code,
-                file_name=f"{uploaded_sl_file.name.split('.')[0]}_acc_code.txt",
+                file_name=f"{file_name.split('.')[0]}_acc_code.txt",
                 mime="text/plain",
                 type="primary",
                 use_container_width=True
