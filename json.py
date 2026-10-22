@@ -692,7 +692,7 @@ with tab2:
     if 'jira_dados' in st.session_state:
         jd = st.session_state['jira_dados']
         
-        st.markdown("<br>#### ✏️ 2. Job Fine-Tuning", unsafe_allow_html=True)
+        st.markdown("<br><h4>✏️ 2. Job Fine-Tuning</h4>", unsafe_allow_html=True)
         colA, colB = st.columns(2)
         with colA: jd['status'] = st.text_input("Ticket Status:", jd.get('status', ''))
         with colB: jd['data_deploy'] = st.text_input("Deployment Date:", jd.get('data_deploy', ''))
@@ -704,7 +704,7 @@ with tab2:
         )
         st.session_state['jira_dados']['segmentos_ativos'] = selecionados
 
-        st.markdown("<br>#### 📦 3. Build Architecture", unsafe_allow_html=True)
+        st.markdown("<br><h4>📦 3. Build Architecture</h4>", unsafe_allow_html=True)
         if st.button("📥 Generate ZIP Package", type="primary"):
             job_id = jd['ticket']
             lob = jd['lob']
