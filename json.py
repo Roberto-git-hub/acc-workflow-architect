@@ -136,20 +136,15 @@ if st.sidebar.button("Puxar Dados do Ticket"):
 
 # --- NOVO: MENU DE AJUSTE FINO NA BARRA LATERAL ---
 if 'jira_dados' in st.session_state:
-    st.sidebar.divider()
-    st.sidebar.subheader("✏️ Ajuste Fino do Job")
-    jd = st.session_state['jira_dados']
-    
-    jd['status'] = st.sidebar.text_input("Status do Ticket:", jd.get('status', ''))
-    jd['data_deploy'] = st.sidebar.text_input("Data de Deploy:", jd.get('data_deploy', ''))
-    
-    # Caixa mágica: Mostra os segmentos e deixa apagar os errados
-    selecionados = st.sidebar.multiselect(
-        "Segmentos (Remova o lixo clicando no X):",
-        options=jd.get('segmentos_originais', []),
-        default=jd.get('segmentos_ativos', [])
-    )
-    st.session_state['jira_dados']['segmentos_ativos'] = selecionados
+        jd = st.session_state['jira_dados']
+        
+        # Puxa os dados limpos diretamente do menu lateral
+        status_txt = jd.get('status', 'N/A')
+        data_deploy_texto = jd.get('data_deploy', 'N/A')
+        segmentos_lista = jd.get('segmentos_ativos', [])
+        segmentos_txt = ', '.join(segmentos_lista) if segmentos_lista else 'Nenhum'
+        
+        st.info(f"**Ticket:** {jd['ticket']} ({status_txt}) | **LOB:** {jd['lob']} | **Deploy:** {data_deploy_texto} | **Segmentos:** {segmentos_txt}")
 
 # =====================================================================
 # FUNÇÕES DE PROCESSAMENTO (Coordenadora)
