@@ -455,8 +455,14 @@ if uploaded_file is not None:
                 errors.append(f"Nomes de Célula (CellName) Duplicados (Causa erro no Adobe): {', '.join(duplicates)}")
                 
             for obj in json_objects:
-                if not obj.get("CellName"):
+                c_name = obj.get("CellName", "")
+                
+                if not c_name:
                     warnings.append(f"CellName vazio no WaterfallId {obj.get('WaterfallId')}")
+                elif len(c_name) > 64:
+                    # Trava crítica se o CellName for maior que 64 caracteres
+                    errors.append(f"CellName excede 64 caracteres (tem {len(c_name)}) no WaterfallId {obj.get('WaterfallId')}: '{c_name}'")
+                    
                 if not obj.get("SlineCode"):
                     warnings.append(f"SlineCode vazio no WaterfallId {obj.get('WaterfallId')}")
                     
@@ -532,6 +538,12 @@ if uploaded_file is not None:
             st.subheader("🔗 Seu Link de Compartilhamento")
             st.info("Copie o link abaixo e cole na planilha. Quem clicar verá diretamente o JSON.")
             st.code(shareable_link, language='text')
+            
+            # --- BLOCO RESTAURADO: Exibição do JSON na tela ---
+            st.divider()
+            st.subheader("📄 Resultado (JSON Bruto):")
+            st.code(json_string, language='json')
+            # --------------------------------------------------
             
             st.download_button(
                 label="📥 Baixar Arquivo .json",
