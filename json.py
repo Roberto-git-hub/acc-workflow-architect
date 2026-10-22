@@ -18,7 +18,7 @@ import copy
 # =====================================================================
 # INTERFACE STREAMLIT - CONFIGURAÇÃO
 # =====================================================================
-st.set_page_config(page_title="Gerador JSON - Adobe Campaign", layout="centered", page_icon="⚙️")
+st.set_page_config(page_title="JSON Generator - Adobe Campaign", layout="centered", page_icon="⚙️")
 
 # =====================================================================
 # MODO LEITOR DE LINK (Operador)
@@ -28,14 +28,14 @@ if 'data' in st.query_params:
         compressed_data = base64.urlsafe_b64decode(st.query_params['data'])
         json_string = zlib.decompress(compressed_data).decode('utf-8')
         
-        st.title("📄 Visualizador de JSON (Workflow)")
-        st.success("JSON carregado com sucesso via link!")
-        st.warning("💡 COMO COPIAR: Passe o mouse no canto superior direito do bloco preto abaixo e clique no ícone de prancheta (📋) para copiar tudo.")
+        st.title("📄 JSON Viewer (Workflow)")
+        st.success("JSON loaded successfully via link!")
+        st.warning("💡 HOW TO COPY: Hover over the top right corner of the black block below and click the clipboard icon (📋) to copy everything.")
         
         st.code(json_string, language='json')
         st.stop() 
     except Exception as e:
-        st.error("⚠️ O link parece estar quebrado ou corrompido. Peça para gerar novamente.")
+        st.error("⚠️ The link seems to be broken or corrupted. Please ask to generate it again.")
         st.stop()
 
 # =====================================================================
@@ -45,9 +45,9 @@ if os.path.exists("logo_netbiis.png"):
     st.sidebar.image("logo_netbiis.png", use_container_width=True)
     st.sidebar.divider()
 
-st.sidebar.header("🔌 Conexão Jira")
+st.sidebar.header("🔌 Jira Connection")
 
-if st.sidebar.button("🔄 Limpar Sessão (Novo Job)"):
+if st.sidebar.button("🔄 Clear Session (New Job)"):
     st.session_state.clear()
     st.rerun()
 
@@ -59,12 +59,12 @@ try:
     JIRA_EMAIL = st.secrets["JIRA_EMAIL"]
     JIRA_TOKEN = st.secrets["JIRA_TOKEN"]
 except KeyError:
-    st.sidebar.error("⚠️ Credenciais não encontradas. Configure o 'Secrets' no Streamlit Cloud.")
+    st.sidebar.error("⚠️ Credentials not found. Please configure 'Secrets' on Streamlit Cloud.")
     st.stop()
 
-if st.sidebar.button("Puxar Dados do Ticket"):
+if st.sidebar.button("Fetch Ticket Data"):
     if ticket_input:
-        with st.spinner(f"Analisando estrutura do {ticket_input}..."):
+        with st.spinner(f"Analyzing structure of {ticket_input}..."):
             auth = HTTPBasicAuth(JIRA_EMAIL, JIRA_TOKEN)
             headers = {"Accept": "application/json"}
             
@@ -76,7 +76,7 @@ if st.sidebar.button("Puxar Dados do Ticket"):
                 campos = dados_main.get("fields", {})
                 
                 titulo = campos.get("summary", "")
-                status_ticket = campos.get("status", {}).get("name", "Desconhecido")
+                status_ticket = campos.get("status", {}).get("name", "Unknown")
                 
                 lob_campo = campos.get("customfield_10476", [""])[0] if campos.get("customfield_10476") else ""
                 
@@ -94,7 +94,7 @@ if st.sidebar.button("Puxar Dados do Ticket"):
                     mes, dia = match_data[-1]
                     data_deploy = f"{dia.zfill(2)}/{mes.zfill(2)}/{ano_atual}"
                 else:
-                    data_deploy = datetime.datetime.now().strftime("%d/%m/%Y")
+                    data_deploy = datetime.datetime.now().strftime("%m/%d/%Y")
                 
                 subtasks = campos.get("subtasks", [])
                 segmentos_encontrados = set()
@@ -126,23 +126,23 @@ if st.sidebar.button("Puxar Dados do Ticket"):
                     "segmentos_ativos": sorted(list(segmentos_encontrados)),
                     "data_deploy": data_deploy
                 }
-                st.sidebar.success("✅ Metadados sincronizados!")
+                st.sidebar.success("✅ Metadata synchronized!")
             else:
-                st.sidebar.error(f"Erro {resp_main.status_code}: Ticket não encontrado.")
+                st.sidebar.error(f"Error {resp_main.status_code}: Ticket not found.")
     else:
-        st.sidebar.warning("Digite um Ticket ID válido.")
+        st.sidebar.warning("Please enter a valid Ticket ID.")
 
 # --- MENU DE AJUSTE FINO NA BARRA LATERAL ---
 if 'jira_dados' in st.session_state:
     st.sidebar.divider()
-    st.sidebar.subheader("✏️ Ajuste Fino do Job")
+    st.sidebar.subheader("✏️ Job Fine-Tuning")
     jd = st.session_state['jira_dados']
     
-    jd['status'] = st.sidebar.text_input("Status do Ticket:", jd.get('status', ''))
-    jd['data_deploy'] = st.sidebar.text_input("Data de Deploy:", jd.get('data_deploy', ''))
+    jd['status'] = st.sidebar.text_input("Ticket Status:", jd.get('status', ''))
+    jd['data_deploy'] = st.sidebar.text_input("Deployment Date:", jd.get('data_deploy', ''))
     
     selecionados = st.sidebar.multiselect(
-        "Segmentos (Remova o lixo clicando no X):",
+        "Segments (Remove unwanted ones by clicking X):",
         options=jd.get('segmentos_originais', []),
         default=jd.get('segmentos_ativos', [])
     )
@@ -402,7 +402,6 @@ def process_data(df):
 def generate_acc_subject_code(file_bytes, file_name):
     temp_subjects = []
     
-    # Se for um Excel (URL Matrix)
     if file_name.endswith(('.xlsx', '.xls')):
         try:
             xls = pd.ExcelFile(io.BytesIO(file_bytes))
@@ -448,9 +447,8 @@ def generate_acc_subject_code(file_bytes, file_name):
                                         "text": subject_text
                                     })
         except Exception as e:
-            return None, f"Erro ao ler o Excel: {e}"
+            return None, f"Error reading Excel: {e}"
             
-    # Se for TXT/CSV
     else:
         file_content = file_bytes.decode('utf-8')
         lines = file_content.splitlines()
@@ -480,7 +478,7 @@ def generate_acc_subject_code(file_bytes, file_name):
     subject_lines = sorted(unique_map.values(), key=sort_key)
     
     if not subject_lines:
-        return None, "Nenhum código 'SL' e Subject encontrados no ficheiro."
+        return None, "No 'SL' code or Subject text found in the file."
         
     code = "<%\n"
     code += "var nameProper = recipient.firstName ? recipient.firstName.charAt(0).toUpperCase() + recipient.firstName.substring(1).toLowerCase() : \"\";\n"
@@ -538,7 +536,7 @@ def generate_acc_subject_code(file_bytes, file_name):
 # =====================================================================
 # INTERFACE STREAMLIT - ABAS (TABS)
 # =====================================================================
-st.title("🛠️ Portal de Automação Netbiis")
+st.title("🛠️ Netbiis Automation Portal")
 
 tab1, tab2 = st.tabs(["⚙️ Waterfall & QA (JSON/ZIP)", "✉️ ACC Subject Generator"])
 
@@ -556,13 +554,13 @@ with tab1:
         status_txt = jd.get('status', 'N/A')
         data_deploy_texto = jd.get('data_deploy', 'N/A')
         segmentos_lista = jd.get('segmentos_ativos', [])
-        segmentos_txt = ', '.join(segmentos_lista) if segmentos_lista else 'Nenhum'
+        segmentos_txt = ', '.join(segmentos_lista) if segmentos_lista else 'None'
         
-        st.info(f"**Ticket:** {ticket_id} ({status_txt}) | **LOB:** {lob_txt} | **Deploy:** {data_deploy_texto} | **Segmentos:** {segmentos_txt}")
+        st.info(f"**Ticket:** {ticket_id} ({status_txt}) | **LOB:** {lob_txt} | **Deploy:** {data_deploy_texto} | **Segments:** {segmentos_txt}")
 
-    st.write("Faça o upload da planilha para auditar, gerar a estrutura JSON e o Link Direto.")
+    st.write("Upload the spreadsheet to audit, generate the JSON structure, and Direct Link.")
 
-    uploaded_file = st.file_uploader("Selecione o arquivo fonte", type=["xlsx", "csv"], key="json_uploader")
+    uploaded_file = st.file_uploader("Select the source file", type=["xlsx", "csv"], key="json_uploader")
 
     if uploaded_file is not None:
         try:
@@ -574,42 +572,42 @@ with tab1:
                 xls = pd.ExcelFile(io.BytesIO(file_bytes))
                 sheet_names = xls.sheet_names
                 if len(sheet_names) > 1:
-                    sheet_selection = st.selectbox("📂 Múltiplas abas detectadas. Selecione a aba da cachoeira:", sheet_names)
+                    sheet_selection = st.selectbox("📂 Multiple tabs detected. Select the waterfall tab:", sheet_names)
                 else:
                     sheet_selection = sheet_names[0]
 
             meta = extract_metadata(file_bytes, file_name, sheet_selection)
             df = load_and_clean_data(file_bytes, file_name, sheet_selection)
             
-            st.success("Arquivo e aba carregados com sucesso!")
+            st.success("File and tab loaded successfully!")
             
-            if st.button("Analisar e Gerar JSON"):
+            if st.button("Analyze and Generate JSON"):
                 json_objects = process_data(df)
                 
                 st.divider()
-                st.subheader("📋 1. Resumo da Campanha (Metadata)")
+                st.subheader("📋 1. Campaign Summary (Metadata)")
                 colA, colB, colC = st.columns(3)
                 
                 with colA:
-                    st.caption("Campanha")
+                    st.caption("Campaign Name")
                     st.write(f"**{meta.get('campaign_name', 'N/A')}**")
                 with colB:
-                    st.caption("Data Prevista (Deployment)")
+                    st.caption("Expected Date (Deployment)")
                     st.write(f"**{meta.get('deployment_date', 'N/A')}**")
                 with colC:
-                    st.caption("Solicitante (User)")
+                    st.caption("Requester (User)")
                     st.write(f"**{meta.get('user', 'N/A')}**")
                     
                 if meta.get("cid"):
-                    st.markdown(f"**CID (Rastreio):** `{meta.get('cid')}`")
+                    st.markdown(f"**CID (Tracking):** `{meta.get('cid')}`")
 
                 if meta.get("notes"):
-                    st.subheader("⚠️ 2. Alertas de Personalização (Notes)")
+                    st.subheader("⚠️ 2. Personalization Alerts (Notes)")
                     for note in meta.get("notes", []):
                         st.info(note, icon="💡")
 
                 st.divider()
-                st.subheader("🕵️‍♂️ Auditoria da Planilha")
+                st.subheader("🕵️‍♂️ Spreadsheet Audit")
                 
                 errors = []
                 warnings = []
@@ -619,35 +617,35 @@ with tab1:
                 duplicates = [name for name, count in counts.items() if count > 1 and name != ""]
                 
                 if duplicates:
-                    errors.append(f"Nomes de Célula (CellName) Duplicados (Causa erro no Adobe): {', '.join(duplicates)}")
+                    errors.append(f"Duplicate Cell Names (CellName) (Causes error in Adobe): {', '.join(duplicates)}")
                     
                 for obj in json_objects:
                     c_name = obj.get("CellName", "")
                     
                     if not c_name:
-                        warnings.append(f"CellName vazio no WaterfallId {obj.get('WaterfallId')}")
+                        warnings.append(f"Empty CellName at WaterfallId {obj.get('WaterfallId')}")
                     elif len(c_name) > 64:
-                        errors.append(f"CellName excede 64 caracteres (tem {len(c_name)}) no WaterfallId {obj.get('WaterfallId')}: '{c_name}'")
+                        errors.append(f"CellName exceeds 64 characters ({len(c_name)} chars) at WaterfallId {obj.get('WaterfallId')}: '{c_name}'")
                         
                     if not obj.get("SlineCode"):
-                        warnings.append(f"SlineCode vazio no WaterfallId {obj.get('WaterfallId')}")
+                        warnings.append(f"Empty SlineCode at WaterfallId {obj.get('WaterfallId')}")
                         
                 if errors:
-                    st.error("🚨 Erros Críticos Encontrados. Corrija a planilha antes de gerar o link!")
+                    st.error("🚨 Critical Errors Found. Please fix the spreadsheet before generating the link!")
                     for e in errors:
                         st.write(f"- {e}")
                     st.stop() 
                     
                 if warnings:
-                    st.warning("⚠️ Avisos de Preenchimento (Verifique se é proposital):")
+                    st.warning("⚠️ Fill Warnings (Check if intentional):")
                     for w in warnings:
                         st.write(f"- {w}")
                         
                 if not errors and not warnings:
-                    st.success("✅ Planilha impecável! Nenhuma anomalia estrutural encontrada.")
+                    st.success("✅ Flawless spreadsheet! No structural anomalies found.")
 
                 st.divider()
-                st.subheader("📊 3. Visão Geral da Waterfall")
+                st.subheader("📊 3. Waterfall Overview")
                 
                 total_segments = len(json_objects)
                 total_ab_tests = sum(1 for obj in json_objects if obj.get("Split") == 0.5) // 2
@@ -657,25 +655,25 @@ with tab1:
                 total_dag = total_segments - total_acm
                 
                 col1, col2, col3, col4 = st.columns(4)
-                col1.metric("Total de Segmentos", total_segments)
-                col2.metric("Nativos (ACM)", total_acm)
-                col3.metric("Externos (DAG)", total_dag)
-                col4.metric("Volume Estimado", f"{total_volume:,.0f}".replace(",", "."))
+                col1.metric("Total Segments", total_segments)
+                col2.metric("Native (ACM)", total_acm)
+                col3.metric("External (DAG)", total_dag)
+                col4.metric("Estimated Volume", f"{total_volume:,.0f}".replace(",", "."))
                 
                 if total_volume > 0:
-                    st.write("**Distribuição Estimada por Segmento:**")
+                    st.write("**Estimated Distribution by Segment:**")
                     chart_data = pd.DataFrame({
-                        "Segmento": [obj.get("CellName") for obj in json_objects],
+                        "Segment": [obj.get("CellName") for obj in json_objects],
                         "Volume": [float(obj.get("DAGSCount", 0)) for obj in json_objects]
                     })
-                    st.bar_chart(chart_data.set_index("Segmento"))
+                    st.bar_chart(chart_data.set_index("Segment"))
 
                 st.divider()
-                st.subheader("✅ 4. Checklist de Supressão e Inclusão")
+                st.subheader("✅ 4. Suppression and Inclusion Checklist")
                 inc_col, exc_col = st.columns(2)
                 
                 with inc_col:
-                    st.success("**🎯 ONLY INCLUDE (Filtros Globais):**")
+                    st.success("**🎯 ONLY INCLUDE (Global Filters):**")
                     if meta.get("include"):
                         for item in meta["include"]:
                             st.write(f"- {item}")
@@ -683,7 +681,7 @@ with tab1:
                         st.write("N/A")
                         
                 with exc_col:
-                    st.error("**🚫 EXCLUDE (Supressões):**")
+                    st.error("**🚫 EXCLUDE (Suppressions):**")
                     if meta.get("exclude"):
                         for item in meta["exclude"]:
                             st.write(f"- {item}")
@@ -701,16 +699,16 @@ with tab1:
                 shareable_link = f"{APP_URL}?data={encoded_data}"
 
                 st.divider()
-                st.subheader("🔗 Seu Link de Compartilhamento")
-                st.info("Copie o link abaixo e cole na planilha. Quem clicar verá diretamente o JSON.")
+                st.subheader("🔗 Your Shareable Link")
+                st.info("Copy the link below and paste it into the spreadsheet. Anyone who clicks will see the JSON directly.")
                 st.code(shareable_link, language='text')
                 
                 st.divider()
-                st.subheader("📄 Resultado (JSON Bruto):")
+                st.subheader("📄 Result (Raw JSON):")
                 st.code(json_string, language='json')
                 
                 st.download_button(
-                    label="📥 Baixar Arquivo .json",
+                    label="📥 Download .json File",
                     data=json_string,
                     file_name="dataSegments_output.json",
                     mime="application/json",
@@ -718,39 +716,39 @@ with tab1:
                 )
 
         except Exception as e:
-            st.error(f"Ocorreu um erro ao processar o arquivo: {e}")
+            st.error(f"An error occurred while processing the file: {e}")
 
     st.divider()
-    st.subheader("📦 5. Gerar Estrutura de Pastas e QA (ZIP)")
+    st.subheader("📦 5. Generate Folder Structure & QA (ZIP)")
 
     if 'jira_dados' in st.session_state:
-        st.info("Utilizando os dados sincronizados do Jira para criar as pastas e as planilhas de QA.")
+        st.info("Using synchronized Jira data to create folders and QA spreadsheets.")
         
-        if st.button("📥 Gerar e Baixar Pacote ZIP do Job", type="primary"):
+        if st.button("📥 Generate and Download Job ZIP Package", type="primary"):
             jd = st.session_state['jira_dados']
             job_id = jd['ticket']
             lob = jd['lob']
             
             segmentos = jd.get('segmentos_ativos', ["N_A"]) if jd.get('segmentos_ativos') else ["N_A"]
             
-            data_hoje = datetime.datetime.now().strftime("%d/%m/%Y")
+            data_hoje = datetime.datetime.now().strftime("%m/%d/%Y")
             data_deploy = jd.get('data_deploy', data_hoje)
             reviewer = "Roberto"
             
             zip_buffer = io.BytesIO()
-            progress_text = "Iniciando estruturação das pastas..."
+            progress_text = "Starting folder structuring..."
             my_bar = st.progress(10, text=progress_text)
             
             with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
                 qa_geral_path = f"{job_id}/04_QA_Geral"
-                my_bar.progress(30, text="Lendo arquivo CSV modelo (Inputs)...")
+                my_bar.progress(30, text="Reading template CSV file (Inputs)...")
                 template_csv_path = "_Templates/Input de Subjects - Modelo.csv"
                 csv_content = b""
                 if os.path.exists(template_csv_path):
                     with open(template_csv_path, "rb") as f:
                         csv_content = f.read()
 
-                my_bar.progress(45, text="Criando as pastas de cada segmento...")
+                my_bar.progress(45, text="Creating folders for each segment...")
                 for seg in segmentos:
                     seg_folder = f"{job_id}/{seg}" if seg != "N_A" else job_id
                     zip_file.writestr(f"{seg_folder}/01_Inputs/", "")
@@ -758,14 +756,14 @@ with tab1:
                     zip_file.writestr(f"{seg_folder}/03_LP/", "")
                     
                     if csv_content:
-                        seg_name = seg if seg != "N_A" else "Geral"
+                        seg_name = seg if seg != "N_A" else "General"
                         nome_csv = f"Input de Subjects - {seg_name}.csv"
                         zip_file.writestr(f"{seg_folder}/01_Inputs/{nome_csv}", csv_content)
                 
                 template_rev_path = "_Templates/Revisao - Modelo.xlsx"
                 template_lc_path = "_Templates/Last Check - Modelo.xlsx"
                 
-                my_bar.progress(60, text="Clonando abas e injetando Logos (Revisão)...")
+                my_bar.progress(60, text="Cloning tabs and injecting Logos (Review)...")
                 if os.path.exists(template_rev_path):
                     wb_rev = load_workbook(template_rev_path)
                     ws_temp_rev = wb_rev.active
@@ -813,9 +811,9 @@ with tab1:
                     
                     rev_stream = io.BytesIO()
                     wb_rev.save(rev_stream)
-                    zip_file.writestr(f"{qa_geral_path}/Revisao Jobs Samsung - {job_id}.xlsx", rev_stream.getvalue())
+                    zip_file.writestr(f"{qa_geral_path}/Review Jobs Samsung - {job_id}.xlsx", rev_stream.getvalue())
 
-                my_bar.progress(85, text="Clonando abas e injetando Logos (Last Check)...")
+                my_bar.progress(85, text="Cloning tabs and injecting Logos (Last Check)...")
                 if os.path.exists(template_lc_path):
                     wb_lc = load_workbook(template_lc_path)
                     ws_temp_lc = wb_lc.active
@@ -866,27 +864,27 @@ with tab1:
                     wb_lc.save(lc_stream)
                     zip_file.writestr(f"{qa_geral_path}/Last Check - {job_id}.xlsx", lc_stream.getvalue())
 
-            my_bar.progress(100, text="✅ Pacote ZIP finalizado com sucesso!")
-            st.success("🎉 Estrutura ZIP gerada com sucesso!")
+            my_bar.progress(100, text="✅ ZIP package finished successfully!")
+            st.success("🎉 ZIP structure generated successfully!")
             
             st.download_button(
-                label="📦 Baixar Estrutura do Job (.zip)",
+                label="📦 Download Job Structure (.zip)",
                 data=zip_buffer.getvalue(),
-                file_name=f"Job_{job_id}_Estrutura.zip",
+                file_name=f"Job_{job_id}_Structure.zip",
                 mime="application/zip",
                 use_container_width=True
             )
     else:
-        st.warning("Puxe os dados do Jira na barra lateral primeiro para habilitar a geração das pastas automáticas.")
+        st.warning("Fetch Jira data in the sidebar first to enable automatic folder generation.")
 
 # ---------------------------------------------------------------------
 # ABA 2: GERADOR DE SUBJECTS (ACC)
 # ---------------------------------------------------------------------
 with tab2:
     st.header("✉️ ACC Subject Line Code Generator")
-    st.write("Faça o upload da sua **URL Matrix (.xlsx)** ou do ficheiro CSV/TXT com os subjects.")
+    st.write("Upload your **URL Matrix (.xlsx)** or CSV/TXT file with the subjects.")
     
-    uploaded_sl_file = st.file_uploader("Selecione a Matrix ou Ficheiro", type=["xlsx", "xls", "csv", "txt"], key="sl_uploader")
+    uploaded_sl_file = st.file_uploader("Select the Matrix or File", type=["xlsx", "xls", "csv", "txt"], key="sl_uploader")
     
     if uploaded_sl_file is not None:
         file_bytes = uploaded_sl_file.getvalue()
@@ -895,19 +893,19 @@ with tab2:
         parsed_data, generated_code = generate_acc_subject_code(file_bytes, file_name)
         
         if parsed_data:
-            st.success("Ficheiro processado com sucesso!")
+            st.success("File processed successfully!")
             
-            st.subheader("👀 Preview dos Subjects Encontrados")
+            st.subheader("👀 Preview of Found Subjects")
             df_preview = pd.DataFrame(parsed_data)[["originalCode", "text"]]
             df_preview.columns = ["Subject Line Code", "Subject Line Text"]
             st.dataframe(df_preview, use_container_width=True)
             
             st.divider()
-            st.subheader("💻 Código Gerado (E4X / JavaScript)")
+            st.subheader("💻 Generated Code (E4X / JavaScript)")
             st.code(generated_code, language='javascript')
             
             st.download_button(
-                label="📥 Descarregar Código (.txt)",
+                label="📥 Download Code (.txt)",
                 data=generated_code,
                 file_name=f"{file_name.split('.')[0]}_acc_code.txt",
                 mime="text/plain",
