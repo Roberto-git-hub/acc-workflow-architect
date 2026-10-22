@@ -668,10 +668,11 @@ st.title("🛠️ Netbiis Automation Portal")
 st.markdown("<p style='color: #8E8E93; font-size: 16px;'>Automate workflow structures, generate code, and compile package deliverables seamlessly.</p>", unsafe_allow_html=True)
 st.divider()
 
-tab1, tab2 = st.tabs(["⚙️ Waterfall & QA (JSON/ZIP)", "✉️ ACC Subject Generator"])
+# Agora temos 3 abas
+tab1, tab2, tab3 = st.tabs(["⚙️ JSON Converter", "📦 ZIP Generator", "✉️ ACC Subject Generator"])
 
 # ---------------------------------------------------------------------
-# ABA 1: GERADOR DE JSON E ZIP
+# ABA 1: GERADOR DE JSON (Waterfall)
 # ---------------------------------------------------------------------
 with tab1:
     
@@ -695,7 +696,7 @@ with tab1:
         </div>
         """, unsafe_allow_html=True)
 
-    st.markdown("### 1. Upload Matrix File")
+    st.markdown("### Upload Matrix File")
     st.write("Upload the Excel matrix to audit, parse the waterfall, and generate the structural payload.")
 
     uploaded_file = st.file_uploader("Select the source file (.xlsx, .csv)", type=["xlsx", "csv"], key="json_uploader")
@@ -848,8 +849,11 @@ with tab1:
         except Exception as e:
             st.error(f"An error occurred while processing the file: {e}")
 
-    st.divider()
-    st.markdown("### 📦 2. Generate Package & QA Folders")
+# ---------------------------------------------------------------------
+# ABA 2: GERADOR DE ESTRUTURA ZIP
+# ---------------------------------------------------------------------
+with tab2:
+    st.markdown("### 📦 Generate Package & QA Folders")
 
     if 'jira_dados' in st.session_state:
         st.write("Generates the complete folder structure and populates QA spreadsheets automatically based on Jira active metadata.")
@@ -995,9 +999,9 @@ with tab1:
         st.warning("Please fetch Jira data in the sidebar first to enable automated folder generation.")
 
 # ---------------------------------------------------------------------
-# ABA 2: GERADOR DE SUBJECTS (ACC)
+# ABA 3: GERADOR DE SUBJECTS (ACC)
 # ---------------------------------------------------------------------
-with tab2:
+with tab3:
     st.markdown("### ✉️ ACC Intelligent Subject Extractor")
     st.write("Upload a **URL Matrix (.xlsx)** or a CSV/TXT file. The engine will scan for SL codes and build the E4X personalization logic.")
     
