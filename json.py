@@ -43,7 +43,6 @@ if 'data' in st.query_params:
 # =====================================================================
 st.sidebar.header("🔌 Conexão Jira")
 
-# Botão de Limpeza da Sessão (UX)
 if st.sidebar.button("🔄 Limpar Sessão (Novo Job)"):
     st.session_state.clear()
     st.rerun()
@@ -73,16 +72,12 @@ if st.sidebar.button("Puxar Dados do Ticket"):
                 campos = dados_main.get("fields", {})
                 
                 titulo = campos.get("summary", "")
-                
-                # Tenta pegar a LOB do campo oficial. Se vier vazio, "pesca" a primeira palavra do título
                 lob_campo = campos.get("customfield_10476", [""])[0] if campos.get("customfield_10476") else ""
                 
                 if lob_campo:
                     lob = str(lob_campo)
                 else:
-                    # Fatiamento: divide o título pelos espaços e pega o item zero (Ex: "MX MB_PUB..." -> "MX")
                     lob_pescado = titulo.split(" ")[0] if titulo else "N/A"
-                    # Remove eventuais caracteres especiais (como colchetes ou traços) que possam vir colados na sigla
                     lob = re.sub(r'[^A-Za-z0-9]', '', lob_pescado)
                 
                 ano_atual = datetime.datetime.now().year
@@ -150,7 +145,6 @@ def extract_metadata(file_bytes, file_name, sheet_name=None):
         "include": [], 
         "exclude": []
     }
-
     notes_col_idx = None
     current_mode = None 
 
@@ -173,21 +167,17 @@ def extract_metadata(file_bytes, file_name, sheet_name=None):
             meta["user"] = col1
         elif col0 == "cid":
             meta["cid"] = re.sub(r'(?i)_segment$', '', col1).strip()
-            
         elif "only include" in col0:
             current_mode = "include"
             vals = [str(x).strip() for x in row.values[1:] if pd.notna(x) and str(x).strip().lower() != 'nan']
             if vals: meta["include"].append(" | ".join(vals))
-            
         elif "exclude" in col0:
             current_mode = "exclude"
             vals = [str(x).strip() for x in row.values[1:] if pd.notna(x) and str(x).strip().lower() != 'nan']
             if vals: meta["exclude"].append(" | ".join(vals))
-            
         elif col0 == "and" and current_mode:
             vals = [str(x).strip() for x in row.values[1:] if pd.notna(x) and str(x).strip().lower() != 'nan']
             if vals: meta[current_mode].append(" | ".join(vals))
-            
         elif col0 and col0 not in ["and", "criteria:"]:
             current_mode = None
 
@@ -196,9 +186,7 @@ def extract_metadata(file_bytes, file_name, sheet_name=None):
             if pd.notna(row.values[notes_col_idx]) and note_val and note_val.lower() not in ['nan', 'notes']:
                 if note_val not in meta["notes"]:
                     meta["notes"].append(note_val)
-
     return meta
-
 
 @st.cache_data
 def load_and_clean_data(file_bytes, file_name, sheet_name=None):
@@ -218,13 +206,11 @@ def load_and_clean_data(file_bytes, file_name, sheet_name=None):
                 df.columns = df.iloc[idx]
                 df = df.iloc[idx + 1:].reset_index(drop=True)
                 break
-
     return df
 
 def process_data(df):
     final_json_data = []
     waterfall_id = 1
-
     cols = {str(c).strip().lower(): c for c in df.columns}
 
     def get_val(row, possible_names):
@@ -246,7 +232,6 @@ def process_data(df):
             continue  
 
         segment_code = get_val(row, ['Segment Code', 'SegmentCode', 'Additional SegmentCode'])
-        
         if not segment_code:
             continue
 
@@ -289,20 +274,14 @@ def process_data(df):
 
         seg_code_lower = segment_code.lower()
         has_split_in_code = (
-            "50%:" in seg_code_lower or 
-            "50%" in seg_code_lower or 
-            "(50%)" in seg_code_lower or
-            "/" in segment_code or 
-            "\n" in segment_code
+            "50%:" in seg_code_lower or "50%" in seg_code_lower or "(50%)" in seg_code_lower or
+            "/" in segment_code or "\n" in segment_code
         )
 
         req_vol_str = str(requested_volume).lower().replace(',', '.')
         has_split_in_volume = (
-            "50%" in req_vol_str or 
-            "50/50" in req_vol_str or 
-            req_vol_str == "0.5" or 
-            req_vol_str == "0.50" or
-            req_vol_str == "50"
+            "50%" in req_vol_str or "50/50" in req_vol_str or req_vol_str == "0.5" or 
+            req_vol_str == "0.50" or req_vol_str == "50"
         )
 
         is_split = has_split_in_code or has_split_in_volume
@@ -368,7 +347,6 @@ def process_data(df):
                     r["isABTest"] = "FALSE"
                 r.update({"extraColumnA": "", "extraColumnB": "", "extraColumnC": ""})
                 final_json_data.append(r)
-
         else:
             code = segment_code.replace("(100%)", "").replace("100%:", "").replace("100%", "").strip()
             sl_code = sline_code.replace("(100%)", "").replace("100%:", "").replace("100%", "").strip()
@@ -384,7 +362,6 @@ def process_data(df):
             waterfall_id += 1
             
             record["_Source"] = source 
-
             if source.upper() != "ACM":
                 record["DAGSCount"] = dag_count
                 record["isABTest"] = "FALSE"
@@ -394,345 +371,461 @@ def process_data(df):
     return final_json_data
 
 # =====================================================================
-# INTERFACE STREAMLIT - MODO CRIADOR
+# FUNÇÃO: GERADOR DE SUBJECTS ACC
 # =====================================================================
-st.title("⚙️ Segment-to-JSON Converter")
-
-if 'jira_dados' in st.session_state:
-    jd = st.session_state['jira_dados']
-    data_deploy_texto = jd.get('data_deploy', 'N/A')
-    st.info(f"**Ticket Ativo:** {jd['ticket']} | **LOB:** {jd['lob']} | **Deploy:** {data_deploy_texto} | **Segmentos:** {', '.join(jd['segmentos']) if jd['segmentos'] else 'Nenhum'}")
-
-st.write("Faça o upload da planilha para auditar, gerar a estrutura JSON e o Link Direto.")
-
-uploaded_file = st.file_uploader("Selecione o arquivo fonte", type=["xlsx", "csv"])
-
-if uploaded_file is not None:
-    try:
-        file_bytes = uploaded_file.getvalue()
-        file_name = uploaded_file.name
-        
-        sheet_selection = None
-        if file_name.endswith(('.xlsx', '.xls')):
-            xls = pd.ExcelFile(io.BytesIO(file_bytes))
-            sheet_names = xls.sheet_names
-            if len(sheet_names) > 1:
-                sheet_selection = st.selectbox("📂 Múltiplas abas detectadas. Selecione a aba da cachoeira:", sheet_names)
-            else:
-                sheet_selection = sheet_names[0]
-
-        meta = extract_metadata(file_bytes, file_name, sheet_selection)
-        df = load_and_clean_data(file_bytes, file_name, sheet_selection)
-        
-        st.success("Arquivo e aba carregados com sucesso!")
-        
-        if st.button("Analisar e Gerar JSON"):
-            json_objects = process_data(df)
-            
-            st.divider()
-            st.subheader("📋 1. Resumo da Campanha (Metadata)")
-            colA, colB, colC = st.columns(3)
-            
-            with colA:
-                st.caption("Campanha")
-                st.write(f"**{meta.get('campaign_name', 'N/A')}**")
-            with colB:
-                st.caption("Data Prevista (Deployment)")
-                st.write(f"**{meta.get('deployment_date', 'N/A')}**")
-            with colC:
-                st.caption("Solicitante (User)")
-                st.write(f"**{meta.get('user', 'N/A')}**")
-                
-            if meta.get("cid"):
-                st.markdown(f"**CID (Rastreio):** `{meta.get('cid')}`")
-
-            if meta.get("notes"):
-                st.subheader("⚠️ 2. Alertas de Personalização (Notes)")
-                for note in meta.get("notes", []):
-                    st.info(note, icon="💡")
-
-            st.divider()
-            st.subheader("🕵️‍♂️ Auditoria da Planilha")
-            
-            errors = []
-            warnings = []
-            
-            cell_names = [obj.get("CellName", "") for obj in json_objects]
-            counts = Counter(cell_names)
-            duplicates = [name for name, count in counts.items() if count > 1 and name != ""]
-            
-            if duplicates:
-                errors.append(f"Nomes de Célula (CellName) Duplicados (Causa erro no Adobe): {', '.join(duplicates)}")
-                
-            for obj in json_objects:
-                c_name = obj.get("CellName", "")
-                
-                if not c_name:
-                    warnings.append(f"CellName vazio no WaterfallId {obj.get('WaterfallId')}")
-                elif len(c_name) > 64:
-                    # Trava crítica se o CellName for maior que 64 caracteres
-                    errors.append(f"CellName excede 64 caracteres (tem {len(c_name)}) no WaterfallId {obj.get('WaterfallId')}: '{c_name}'")
-                    
-                if not obj.get("SlineCode"):
-                    warnings.append(f"SlineCode vazio no WaterfallId {obj.get('WaterfallId')}")
-                    
-            if errors:
-                st.error("🚨 Erros Críticos Encontrados. Corrija a planilha antes de gerar o link!")
-                for e in errors:
-                    st.write(f"- {e}")
-                st.stop() 
-                
-            if warnings:
-                st.warning("⚠️ Avisos de Preenchimento (Verifique se é proposital):")
-                for w in warnings:
-                    st.write(f"- {w}")
-                    
-            if not errors and not warnings:
-                st.success("✅ Planilha impecável! Nenhuma anomalia estrutural encontrada.")
-
-            st.divider()
-            st.subheader("📊 3. Visão Geral da Waterfall")
-            
-            total_segments = len(json_objects)
-            total_ab_tests = sum(1 for obj in json_objects if obj.get("Split") == 0.5) // 2
-            total_volume = sum(float(obj.get("DAGSCount", 0)) for obj in json_objects)
-            
-            total_acm = sum(1 for obj in json_objects if str(obj.get("_Source", "")).upper() == "ACM")
-            total_dag = total_segments - total_acm
-            
-            col1, col2, col3, col4 = st.columns(4)
-            col1.metric("Total de Segmentos", total_segments)
-            col2.metric("Nativos (ACM)", total_acm)
-            col3.metric("Externos (DAG)", total_dag)
-            col4.metric("Volume Estimado", f"{total_volume:,.0f}".replace(",", "."))
-            
-            if total_volume > 0:
-                st.write("**Distribuição Estimada por Segmento:**")
-                chart_data = pd.DataFrame({
-                    "Segmento": [obj.get("CellName") for obj in json_objects],
-                    "Volume": [float(obj.get("DAGSCount", 0)) for obj in json_objects]
+def generate_acc_subject_code(file_content):
+    lines = file_content.splitlines()
+    line_regex = re.compile(r'^\s*(SL[_-]?\d+)\s*;\s*(.*)', re.IGNORECASE)
+    
+    temp_subjects = []
+    for line in lines:
+        line = line.strip()
+        if not line: continue
+        match = line_regex.match(line)
+        if match:
+            original_code = match.group(1).strip()
+            subject_text = match.group(2).strip()
+            normalized_code = re.sub(r'^SL[_-]?', 'SL_', original_code, flags=re.IGNORECASE).upper()
+            if subject_text:
+                temp_subjects.append({
+                    "originalCode": original_code,
+                    "normalizedCode": normalized_code,
+                    "text": subject_text
                 })
-                st.bar_chart(chart_data.set_index("Segmento"))
-
-            st.divider()
-            st.subheader("✅ 4. Checklist de Supressão e Inclusão")
-            inc_col, exc_col = st.columns(2)
-            
-            with inc_col:
-                st.success("**🎯 ONLY INCLUDE (Filtros Globais):**")
-                if meta.get("include"):
-                    for item in meta["include"]:
-                        st.write(f"- {item}")
-                else:
-                    st.write("N/A")
-                    
-            with exc_col:
-                st.error("**🚫 EXCLUDE (Supressões):**")
-                if meta.get("exclude"):
-                    for item in meta["exclude"]:
-                        st.write(f"- {item}")
-                else:
-                    st.write("N/A")
-
-            for obj in json_objects:
-                obj.pop("_Source", None)
                 
-            json_string = json.dumps(json_objects, indent=2)
-
-            APP_URL = "https://upgraded-guide-bxpthdptstyfwaor2naznv.streamlit.app"
-            compressed_data = zlib.compress(json_string.encode('utf-8'))
-            encoded_data = base64.urlsafe_b64encode(compressed_data).decode('utf-8')
-            shareable_link = f"{APP_URL}?data={encoded_data}"
-
-            st.divider()
-            st.subheader("🔗 Seu Link de Compartilhamento")
-            st.info("Copie o link abaixo e cole na planilha. Quem clicar verá diretamente o JSON.")
-            st.code(shareable_link, language='text')
+    unique_map = {item["normalizedCode"]: item for item in temp_subjects}
+    
+    def sort_key(item):
+        num_part = item["normalizedCode"].split('_')[1] if '_' in item["normalizedCode"] else '0'
+        return int(num_part) if num_part.isdigit() else 0
+        
+    subject_lines = sorted(unique_map.values(), key=sort_key)
+    
+    if not subject_lines:
+        return None, "Nenhuma linha válida encontrada no formato 'SLxx; Texto...'."
+        
+    code = "<%\n"
+    code += "var nameProper = recipient.firstName ? recipient.firstName.charAt(0).toUpperCase() + recipient.firstName.substring(1).toLowerCase() : \"\";\n"
+    code += "var subject = \"\";\n"
+    code += "var hasFirstName = recipient.firstName && recipient.firstName !== '' && recipient.firstName !== 'NONAME';\n"
+    
+    name_regex = re.compile(r'([Name]\s*,?\s*)', re.IGNORECASE)
+    
+    for index, line in enumerate(subject_lines):
+        original_text = line["text"]
+        match = name_regex.search(original_text)
+        has_first_name = bool(match)
+        
+        if has_first_name:
+            prefix = original_text[:match.start()]
+            text_after = original_text[match.end():]
+        else:
+            prefix = ""
+            text_after = original_text
             
-            # --- BLOCO RESTAURADO: Exibição do JSON na tela ---
-            st.divider()
-            st.subheader("📄 Resultado (JSON Bruto):")
-            st.code(json_string, language='json')
-            # --------------------------------------------------
+        escaped_prefix = prefix.replace('"', '\\"')
+        escaped_text_after = text_after.replace('"', '\\"')
+        
+        if not has_first_name and escaped_text_after:
+            escaped_text_after = escaped_text_after[0].upper() + escaped_text_after[1:]
+            
+        if has_first_name:
+            subject_expr_if = f'"{escaped_prefix}" + nameProper + ", {escaped_text_after}"'
+        else:
+            subject_expr_if = f'"{escaped_prefix}{escaped_text_after}"'
+            
+        text_for_else = text_after.strip()
+        if text_for_else:
+            text_for_else = text_for_else[0].upper() + text_for_else[1:]
+        subject_str_else = f'"{escaped_prefix}{text_for_else.replace("\"", "\\\"")}"'
+        
+        cond_prefix = "if" if index == 0 else "else if"
+        
+        code += f"\n  {cond_prefix} (targetData.slineCode == '{line['originalCode']}') {{\n"
+        code += f"    if (hasFirstName) {{\n"
+        code += f"      subject = {subject_expr_if};\n"
+        code += f"    }} else {{\n"
+        code += f"      subject = {subject_str_else};\n"
+        code += f"    }}\n"
+        code += f"  }}"
+        
+    code += "\n%>\n<%= subject %>\n<%\n"
+    code += "if( subject == '' || subject == undefined ) {\n"
+    code += "  var attemptedCode = targetData.slineCode || \"UNKNOWN\";\n"
+    code += "  delivery.cancelMessage( 'Empty Subject Line generated for slineCode: ' + attemptedCode );\n"
+    code += "}\n%>"
+    
+    return subject_lines, code
+
+# =====================================================================
+# INTERFACE STREAMLIT - ABAS (TABS)
+# =====================================================================
+st.title("🛠️ Portal de Automação Netbiis")
+
+tab1, tab2 = st.tabs(["⚙️ Waterfall & QA (JSON/ZIP)", "✉️ ACC Subject Generator"])
+
+# ---------------------------------------------------------------------
+# ABA 1: GERADOR DE JSON E ZIP
+# ---------------------------------------------------------------------
+with tab1:
+    st.header("⚙️ Segment-to-JSON Converter")
+    
+    if 'jira_dados' in st.session_state:
+        jd = st.session_state['jira_dados']
+        data_deploy_texto = jd.get('data_deploy', 'N/A')
+        st.info(f"**Ticket Ativo:** {jd['ticket']} | **LOB:** {jd['lob']} | **Deploy:** {data_deploy_texto} | **Segmentos:** {', '.join(jd['segmentos']) if jd['segmentos'] else 'Nenhum'}")
+
+    st.write("Faça o upload da planilha para auditar, gerar a estrutura JSON e o Link Direto.")
+
+    uploaded_file = st.file_uploader("Selecione o arquivo fonte", type=["xlsx", "csv"], key="json_uploader")
+
+    if uploaded_file is not None:
+        try:
+            file_bytes = uploaded_file.getvalue()
+            file_name = uploaded_file.name
+            
+            sheet_selection = None
+            if file_name.endswith(('.xlsx', '.xls')):
+                xls = pd.ExcelFile(io.BytesIO(file_bytes))
+                sheet_names = xls.sheet_names
+                if len(sheet_names) > 1:
+                    sheet_selection = st.selectbox("📂 Múltiplas abas detectadas. Selecione a aba da cachoeira:", sheet_names)
+                else:
+                    sheet_selection = sheet_names[0]
+
+            meta = extract_metadata(file_bytes, file_name, sheet_selection)
+            df = load_and_clean_data(file_bytes, file_name, sheet_selection)
+            
+            st.success("Arquivo e aba carregados com sucesso!")
+            
+            if st.button("Analisar e Gerar JSON"):
+                json_objects = process_data(df)
+                
+                st.divider()
+                st.subheader("📋 1. Resumo da Campanha (Metadata)")
+                colA, colB, colC = st.columns(3)
+                
+                with colA:
+                    st.caption("Campanha")
+                    st.write(f"**{meta.get('campaign_name', 'N/A')}**")
+                with colB:
+                    st.caption("Data Prevista (Deployment)")
+                    st.write(f"**{meta.get('deployment_date', 'N/A')}**")
+                with colC:
+                    st.caption("Solicitante (User)")
+                    st.write(f"**{meta.get('user', 'N/A')}**")
+                    
+                if meta.get("cid"):
+                    st.markdown(f"**CID (Rastreio):** `{meta.get('cid')}`")
+
+                if meta.get("notes"):
+                    st.subheader("⚠️ 2. Alertas de Personalização (Notes)")
+                    for note in meta.get("notes", []):
+                        st.info(note, icon="💡")
+
+                st.divider()
+                st.subheader("🕵️‍♂️ Auditoria da Planilha")
+                
+                errors = []
+                warnings = []
+                
+                cell_names = [obj.get("CellName", "") for obj in json_objects]
+                counts = Counter(cell_names)
+                duplicates = [name for name, count in counts.items() if count > 1 and name != ""]
+                
+                if duplicates:
+                    errors.append(f"Nomes de Célula (CellName) Duplicados (Causa erro no Adobe): {', '.join(duplicates)}")
+                    
+                for obj in json_objects:
+                    c_name = obj.get("CellName", "")
+                    
+                    if not c_name:
+                        warnings.append(f"CellName vazio no WaterfallId {obj.get('WaterfallId')}")
+                    elif len(c_name) > 64:
+                        errors.append(f"CellName excede 64 caracteres (tem {len(c_name)}) no WaterfallId {obj.get('WaterfallId')}: '{c_name}'")
+                        
+                    if not obj.get("SlineCode"):
+                        warnings.append(f"SlineCode vazio no WaterfallId {obj.get('WaterfallId')}")
+                        
+                if errors:
+                    st.error("🚨 Erros Críticos Encontrados. Corrija a planilha antes de gerar o link!")
+                    for e in errors:
+                        st.write(f"- {e}")
+                    st.stop() 
+                    
+                if warnings:
+                    st.warning("⚠️ Avisos de Preenchimento (Verifique se é proposital):")
+                    for w in warnings:
+                        st.write(f"- {w}")
+                        
+                if not errors and not warnings:
+                    st.success("✅ Planilha impecável! Nenhuma anomalia estrutural encontrada.")
+
+                st.divider()
+                st.subheader("📊 3. Visão Geral da Waterfall")
+                
+                total_segments = len(json_objects)
+                total_ab_tests = sum(1 for obj in json_objects if obj.get("Split") == 0.5) // 2
+                total_volume = sum(float(obj.get("DAGSCount", 0)) for obj in json_objects)
+                
+                total_acm = sum(1 for obj in json_objects if str(obj.get("_Source", "")).upper() == "ACM")
+                total_dag = total_segments - total_acm
+                
+                col1, col2, col3, col4 = st.columns(4)
+                col1.metric("Total de Segmentos", total_segments)
+                col2.metric("Nativos (ACM)", total_acm)
+                col3.metric("Externos (DAG)", total_dag)
+                col4.metric("Volume Estimado", f"{total_volume:,.0f}".replace(",", "."))
+                
+                if total_volume > 0:
+                    st.write("**Distribuição Estimada por Segmento:**")
+                    chart_data = pd.DataFrame({
+                        "Segmento": [obj.get("CellName") for obj in json_objects],
+                        "Volume": [float(obj.get("DAGSCount", 0)) for obj in json_objects]
+                    })
+                    st.bar_chart(chart_data.set_index("Segmento"))
+
+                st.divider()
+                st.subheader("✅ 4. Checklist de Supressão e Inclusão")
+                inc_col, exc_col = st.columns(2)
+                
+                with inc_col:
+                    st.success("**🎯 ONLY INCLUDE (Filtros Globais):**")
+                    if meta.get("include"):
+                        for item in meta["include"]:
+                            st.write(f"- {item}")
+                    else:
+                        st.write("N/A")
+                        
+                with exc_col:
+                    st.error("**🚫 EXCLUDE (Supressões):**")
+                    if meta.get("exclude"):
+                        for item in meta["exclude"]:
+                            st.write(f"- {item}")
+                    else:
+                        st.write("N/A")
+
+                for obj in json_objects:
+                    obj.pop("_Source", None)
+                    
+                json_string = json.dumps(json_objects, indent=2)
+
+                APP_URL = "https://upgraded-guide-bxpthdptstyfwaor2naznv.streamlit.app"
+                compressed_data = zlib.compress(json_string.encode('utf-8'))
+                encoded_data = base64.urlsafe_b64encode(compressed_data).decode('utf-8')
+                shareable_link = f"{APP_URL}?data={encoded_data}"
+
+                st.divider()
+                st.subheader("🔗 Seu Link de Compartilhamento")
+                st.info("Copie o link abaixo e cole na planilha. Quem clicar verá diretamente o JSON.")
+                st.code(shareable_link, language='text')
+                
+                st.divider()
+                st.subheader("📄 Resultado (JSON Bruto):")
+                st.code(json_string, language='json')
+                
+                st.download_button(
+                    label="📥 Baixar Arquivo .json",
+                    data=json_string,
+                    file_name="dataSegments_output.json",
+                    mime="application/json",
+                    use_container_width=True
+                )
+
+        except Exception as e:
+            st.error(f"Ocorreu um erro ao processar o arquivo: {e}")
+
+    st.divider()
+    st.subheader("📦 5. Gerar Estrutura de Pastas e QA (ZIP)")
+
+    if 'jira_dados' in st.session_state:
+        st.info("Utilizando os dados sincronizados do Jira para criar as pastas e as planilhas de QA.")
+        
+        if st.button("📥 Gerar e Baixar Pacote ZIP do Job", type="primary"):
+            jd = st.session_state['jira_dados']
+            job_id = jd['ticket']
+            lob = jd['lob']
+            segmentos = jd['segmentos'] if jd['segmentos'] else ["N_A"]
+            
+            data_hoje = datetime.datetime.now().strftime("%d/%m/%Y")
+            data_deploy = jd.get('data_deploy', data_hoje)
+            reviewer = "Roberto"
+            
+            zip_buffer = io.BytesIO()
+            progress_text = "Iniciando estruturação das pastas..."
+            my_bar = st.progress(10, text=progress_text)
+            
+            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                qa_geral_path = f"{job_id}/04_QA_Geral"
+                my_bar.progress(30, text="Lendo arquivo CSV modelo (Inputs)...")
+                template_csv_path = "_Templates/Input de Subjects - Modelo.csv"
+                csv_content = b""
+                if os.path.exists(template_csv_path):
+                    with open(template_csv_path, "rb") as f:
+                        csv_content = f.read()
+
+                my_bar.progress(45, text="Criando as pastas de cada segmento...")
+                for seg in segmentos:
+                    seg_folder = f"{job_id}/{seg}" if seg != "N_A" else job_id
+                    zip_file.writestr(f"{seg_folder}/01_Inputs/", "")
+                    zip_file.writestr(f"{seg_folder}/02_HTML/", "")
+                    zip_file.writestr(f"{seg_folder}/03_LP/", "")
+                    
+                    if csv_content:
+                        seg_name = seg if seg != "N_A" else "Geral"
+                        nome_csv = f"Input de Subjects - {seg_name}.csv"
+                        zip_file.writestr(f"{seg_folder}/01_Inputs/{nome_csv}", csv_content)
+                
+                template_rev_path = "_Templates/Revisao - Modelo.xlsx"
+                template_lc_path = "_Templates/Last Check - Modelo.xlsx"
+                
+                my_bar.progress(60, text="Clonando abas e injetando Logos (Revisão)...")
+                if os.path.exists(template_rev_path):
+                    wb_rev = load_workbook(template_rev_path)
+                    ws_temp_rev = wb_rev.active
+                    
+                    logos_rev = []
+                    for img in ws_temp_rev._images:
+                        try:
+                            if hasattr(img.ref, 'getvalue'):
+                                img_bytes = img.ref.getvalue()
+                            elif hasattr(img.ref, 'read'):
+                                img.ref.seek(0)
+                                img_bytes = img.ref.read()
+                            else:
+                                img_bytes = img._data()
+                            logos_rev.append((img_bytes, copy.copy(img.anchor)))
+                        except:
+                            pass
+                    
+                    for sheet_name in wb_rev.sheetnames:
+                        if sheet_name != ws_temp_rev.title:
+                            del wb_rev[sheet_name]
+                    
+                    for i, seg in enumerate(segmentos):
+                        seg_name = "N/A" if seg == "N_A" else seg
+                        raw_aba_name = job_id if seg_name == "N/A" else f"{job_id} - {seg_name}"
+                        nome_aba = re.sub(r'[/\\?*\[\]]', '', raw_aba_name)[:31]
+                        
+                        if i == 0:
+                            ws_target = ws_temp_rev
+                        else:
+                            ws_target = wb_rev.copy_worksheet(ws_temp_rev)
+                            for img_bytes, anchor in logos_rev:
+                                try:
+                                    nova_img = xlImage(io.BytesIO(img_bytes))
+                                    nova_img.anchor = copy.copy(anchor)
+                                    ws_target.add_image(nova_img)
+                                except:
+                                    pass
+                            
+                        ws_target.title = nome_aba
+                        ws_target["F2"] = f"EX; {job_id}"
+                        ws_target["F3"] = f"EX; {seg_name}"
+                        ws_target["F4"] = reviewer
+                        ws_target["F6"] = data_hoje
+                    
+                    rev_stream = io.BytesIO()
+                    wb_rev.save(rev_stream)
+                    zip_file.writestr(f"{qa_geral_path}/Revisao Jobs Samsung - {job_id}.xlsx", rev_stream.getvalue())
+
+                my_bar.progress(85, text="Clonando abas e injetando Logos (Last Check)...")
+                if os.path.exists(template_lc_path):
+                    wb_lc = load_workbook(template_lc_path)
+                    ws_temp_lc = wb_lc.active
+                    
+                    logos_lc = []
+                    for img in ws_temp_lc._images:
+                        try:
+                            if hasattr(img.ref, 'getvalue'):
+                                img_bytes = img.ref.getvalue()
+                            elif hasattr(img.ref, 'read'):
+                                img.ref.seek(0)
+                                img_bytes = img.ref.read()
+                            else:
+                                img_bytes = img._data()
+                            logos_lc.append((img_bytes, copy.copy(img.anchor)))
+                        except:
+                            pass
+                    
+                    for sheet_name in wb_lc.sheetnames:
+                        if sheet_name != ws_temp_lc.title:
+                            del wb_lc[sheet_name]
+                            
+                    for i, seg in enumerate(segmentos):
+                        seg_name = "N/A" if seg == "N_A" else seg
+                        raw_aba_name = job_id if seg_name == "N/A" else f"{job_id} - {seg_name}"
+                        nome_aba = re.sub(r'[/\\?*\[\]]', '', raw_aba_name)[:31]
+                        
+                        if i == 0:
+                            ws_target = ws_temp_lc
+                        else:
+                            ws_target = wb_lc.copy_worksheet(ws_temp_lc)
+                            for img_bytes, anchor in logos_lc:
+                                try:
+                                    nova_img = xlImage(io.BytesIO(img_bytes))
+                                    nova_img.anchor = copy.copy(anchor)
+                                    ws_target.add_image(nova_img)
+                                except:
+                                    pass
+                            
+                        ws_target.title = nome_aba
+                        ws_target["D1"] = f"Reviewed by: {reviewer} Vasconcelos"
+                        ws_target["D2"] = f"LOB:{lob}"
+                        ws_target["D3"] = f"JIRA Ticket: {job_id}"
+                        ws_target["D4"] = f"Segment: {seg_name}"
+                        ws_target["D5"] = data_deploy
+                        
+                    lc_stream = io.BytesIO()
+                    wb_lc.save(lc_stream)
+                    zip_file.writestr(f"{qa_geral_path}/Last Check - {job_id}.xlsx", lc_stream.getvalue())
+
+            my_bar.progress(100, text="✅ Pacote ZIP finalizado com sucesso!")
+            st.success("🎉 Estrutura ZIP gerada com sucesso!")
             
             st.download_button(
-                label="📥 Baixar Arquivo .json",
-                data=json_string,
-                file_name="dataSegments_output.json",
-                mime="application/json",
+                label="📦 Baixar Estrutura do Job (.zip)",
+                data=zip_buffer.getvalue(),
+                file_name=f"Job_{job_id}_Estrutura.zip",
+                mime="application/zip",
                 use_container_width=True
             )
+    else:
+        st.warning("Puxe os dados do Jira na barra lateral primeiro para habilitar a geração das pastas automáticas.")
 
-    except Exception as e:
-        st.error(f"Ocorreu um erro ao processar o arquivo: {e}")
-
-# =====================================================================
-# MÓDULO 2: GERADOR DE PACOTE ZIP COM PROGRESS BAR
-# =====================================================================
-st.divider()
-st.subheader("📦 5. Gerar Estrutura de Pastas e QA (ZIP)")
-
-if 'jira_dados' in st.session_state:
-    st.info("Utilizando os dados sincronizados do Jira para criar as pastas e as planilhas de QA.")
+# ---------------------------------------------------------------------
+# ABA 2: GERADOR DE SUBJECTS (ACC)
+# ---------------------------------------------------------------------
+with tab2:
+    st.header("✉️ ACC Subject Line Code Generator")
+    st.write("Faça o upload do seu ficheiro CSV ou TXT contendo as subject lines (ex: `SL1; [Name], text...`).")
     
-    if st.button("📥 Gerar e Baixar Pacote ZIP do Job", type="primary"):
-        jd = st.session_state['jira_dados']
-        job_id = jd['ticket']
-        lob = jd['lob']
-        segmentos = jd['segmentos'] if jd['segmentos'] else ["N_A"]
+    uploaded_sl_file = st.file_uploader("Selecione o ficheiro de Subjects (.csv, .txt)", type=["csv", "txt"], key="sl_uploader")
+    
+    if uploaded_sl_file is not None:
+        file_content = uploaded_sl_file.getvalue().decode('utf-8')
         
-        data_hoje = datetime.datetime.now().strftime("%d/%m/%Y")
-        data_deploy = jd.get('data_deploy', data_hoje)
-        reviewer = "Roberto"
+        parsed_data, generated_code = generate_acc_subject_code(file_content)
         
-        zip_buffer = io.BytesIO()
-        
-        # Inicia a Barra de Progresso visual na tela
-        progress_text = "Iniciando estruturação das pastas..."
-        my_bar = st.progress(10, text=progress_text)
-        
-        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+        if parsed_data:
+            st.success("Ficheiro lido com sucesso!")
             
-            qa_geral_path = f"{job_id}/04_QA_Geral"
+            st.subheader("👀 Preview dos Subjects Encontrados")
+            df_preview = pd.DataFrame(parsed_data)[["originalCode", "text"]]
+            df_preview.columns = ["Subject Line Code", "Subject Line Text"]
+            st.dataframe(df_preview, use_container_width=True)
             
-            my_bar.progress(30, text="Lendo arquivo CSV modelo (Inputs)...")
-            template_csv_path = "_Templates/Input de Subjects - Modelo.csv"
-            csv_content = b""
-            if os.path.exists(template_csv_path):
-                with open(template_csv_path, "rb") as f:
-                    csv_content = f.read()
-
-            my_bar.progress(45, text="Criando as pastas de cada segmento...")
-            for seg in segmentos:
-                seg_folder = f"{job_id}/{seg}" if seg != "N_A" else job_id
-                zip_file.writestr(f"{seg_folder}/01_Inputs/", "")
-                zip_file.writestr(f"{seg_folder}/02_HTML/", "")
-                zip_file.writestr(f"{seg_folder}/03_LP/", "")
-                
-                if csv_content:
-                    seg_name = seg if seg != "N_A" else "Geral"
-                    nome_csv = f"Input de Subjects - {seg_name}.csv"
-                    zip_file.writestr(f"{seg_folder}/01_Inputs/{nome_csv}", csv_content)
+            st.divider()
+            st.subheader("💻 Código Gerado (E4X / JavaScript)")
+            st.code(generated_code, language='javascript')
             
-            template_rev_path = "_Templates/Revisao - Modelo.xlsx"
-            template_lc_path = "_Templates/Last Check - Modelo.xlsx"
-            
-            my_bar.progress(60, text="Clonando abas e injetando Logos (Revisão)...")
-            # --- PROCESSAR PLANILHA DE REVISÃO ---
-            if os.path.exists(template_rev_path):
-                wb_rev = load_workbook(template_rev_path)
-                ws_temp_rev = wb_rev.active
-                
-                logos_rev = []
-                for img in ws_temp_rev._images:
-                    try:
-                        if hasattr(img.ref, 'getvalue'):
-                            img_bytes = img.ref.getvalue()
-                        elif hasattr(img.ref, 'read'):
-                            img.ref.seek(0)
-                            img_bytes = img.ref.read()
-                        else:
-                            img_bytes = img._data()
-                        logos_rev.append((img_bytes, copy.copy(img.anchor)))
-                    except:
-                        pass
-                
-                for sheet_name in wb_rev.sheetnames:
-                    if sheet_name != ws_temp_rev.title:
-                        del wb_rev[sheet_name]
-                
-                for i, seg in enumerate(segmentos):
-                    seg_name = "N/A" if seg == "N_A" else seg
-                    
-                    raw_aba_name = job_id if seg_name == "N/A" else f"{job_id} - {seg_name}"
-                    nome_aba = re.sub(r'[/\\?*\[\]]', '', raw_aba_name)[:31]
-                    
-                    if i == 0:
-                        ws_target = ws_temp_rev
-                    else:
-                        ws_target = wb_rev.copy_worksheet(ws_temp_rev)
-                        for img_bytes, anchor in logos_rev:
-                            try:
-                                nova_img = xlImage(io.BytesIO(img_bytes))
-                                nova_img.anchor = copy.copy(anchor)
-                                ws_target.add_image(nova_img)
-                            except:
-                                pass
-                        
-                    ws_target.title = nome_aba
-                    
-                    ws_target["F2"] = f"EX; {job_id}"
-                    ws_target["F3"] = f"EX; {seg_name}"
-                    ws_target["F4"] = reviewer
-                    ws_target["F6"] = data_hoje
-                
-                rev_stream = io.BytesIO()
-                wb_rev.save(rev_stream)
-                zip_file.writestr(f"{qa_geral_path}/Revisao Jobs Samsung - {job_id}.xlsx", rev_stream.getvalue())
-
-            my_bar.progress(85, text="Clonando abas e injetando Logos (Last Check)...")
-            # --- PROCESSAR PLANILHA LAST CHECK ---
-            if os.path.exists(template_lc_path):
-                wb_lc = load_workbook(template_lc_path)
-                ws_temp_lc = wb_lc.active
-                
-                logos_lc = []
-                for img in ws_temp_lc._images:
-                    try:
-                        if hasattr(img.ref, 'getvalue'):
-                            img_bytes = img.ref.getvalue()
-                        elif hasattr(img.ref, 'read'):
-                            img.ref.seek(0)
-                            img_bytes = img.ref.read()
-                        else:
-                            img_bytes = img._data()
-                        logos_lc.append((img_bytes, copy.copy(img.anchor)))
-                    except:
-                        pass
-                
-                for sheet_name in wb_lc.sheetnames:
-                    if sheet_name != ws_temp_lc.title:
-                        del wb_lc[sheet_name]
-                        
-                for i, seg in enumerate(segmentos):
-                    seg_name = "N/A" if seg == "N_A" else seg
-                    
-                    raw_aba_name = job_id if seg_name == "N/A" else f"{job_id} - {seg_name}"
-                    nome_aba = re.sub(r'[/\\?*\[\]]', '', raw_aba_name)[:31]
-                    
-                    if i == 0:
-                        ws_target = ws_temp_lc
-                    else:
-                        ws_target = wb_lc.copy_worksheet(ws_temp_lc)
-                        for img_bytes, anchor in logos_lc:
-                            try:
-                                nova_img = xlImage(io.BytesIO(img_bytes))
-                                nova_img.anchor = copy.copy(anchor)
-                                ws_target.add_image(nova_img)
-                            except:
-                                pass
-                        
-                    ws_target.title = nome_aba
-                    
-                    ws_target["D1"] = f"Reviewed by: {reviewer} Vasconcelos"
-                    ws_target["D2"] = f"LOB:{lob}"
-                    ws_target["D3"] = f"JIRA Ticket: {job_id}"
-                    ws_target["D4"] = f"Segment: {seg_name}"
-                    ws_target["D5"] = data_deploy
-                    
-                lc_stream = io.BytesIO()
-                wb_lc.save(lc_stream)
-                zip_file.writestr(f"{qa_geral_path}/Last Check - {job_id}.xlsx", lc_stream.getvalue())
-
-        my_bar.progress(100, text="✅ Pacote ZIP finalizado com sucesso!")
-        
-        st.success("🎉 Estrutura ZIP gerada com sucesso!")
-        st.download_button(
-            label="📦 Baixar Estrutura do Job (.zip)",
-            data=zip_buffer.getvalue(),
-            file_name=f"Job_{job_id}_Estrutura.zip",
-            mime="application/zip",
-            use_container_width=True
-        )
-else:
-    st.warning("Puxe os dados do Jira na barra lateral primeiro para habilitar a geração das pastas automáticas.")
+            st.download_button(
+                label="📥 Descarregar Código (.txt)",
+                data=generated_code,
+                file_name=f"{uploaded_sl_file.name.split('.')[0]}_acc_code.txt",
+                mime="text/plain",
+                type="primary",
+                use_container_width=True
+            )
+        else:
+            st.error(generated_code)
