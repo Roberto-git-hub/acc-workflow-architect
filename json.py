@@ -43,7 +43,6 @@ if 'data' in st.query_params:
 # =====================================================================
 import os
 
-# Tenta carregar o logo na barra lateral. Se o ficheiro não for encontrado, o app não quebra.
 if os.path.exists("logo_netbiis.png"):
     st.sidebar.image("logo_netbiis.png", use_container_width=True)
     st.sidebar.divider()
@@ -56,7 +55,7 @@ if st.sidebar.button("🔄 Limpar Sessão (Novo Job)"):
 
 ticket_input = st.sidebar.text_input("JIRA Ticket ID (ex: SEA-7117)").strip().upper()
 
-# 🔒 CREDENCIAIS PROTEGIDAS (Via Streamlit Secrets)
+# 🔒 CREDENCIAIS PROTEGIDAS
 JIRA_URL = "https://netbiis.atlassian.net"
 try:
     JIRA_EMAIL = st.secrets["JIRA_EMAIL"]
@@ -79,7 +78,7 @@ if st.sidebar.button("Puxar Dados do Ticket"):
                 campos = dados_main.get("fields", {})
                 
                 titulo = campos.get("summary", "")
-                status_ticket = campos.get("status", {}).get("name", "Desconhecido") # Puxa o status real do Jira
+                status_ticket = campos.get("status", {}).get("name", "Desconhecido")
                 
                 lob_campo = campos.get("customfield_10476", [""])[0] if campos.get("customfield_10476") else ""
                 
@@ -91,10 +90,10 @@ if st.sidebar.button("Puxar Dados do Ticket"):
                 
                 ano_atual = datetime.datetime.now().year
                 data_deploy = ""
-                # Procura qualquer formato de MM/DD no título (com parênteses, traços ou espaços)
+                # Deteta datas no formato MM/DD com ou sem parênteses
                 match_data = re.findall(r'(\d{1,2})/(\d{1,2})', titulo)
                 if match_data:
-                    mes, dia = match_data[-1] # Pega a última data encontrada no título
+                    mes, dia = match_data[-1]
                     data_deploy = f"{dia.zfill(2)}/{mes.zfill(2)}/{ano_atual}"
                 else:
                     data_deploy = datetime.datetime.now().strftime("%d/%m/%Y")
@@ -112,34 +111,45 @@ if st.sidebar.button("Puxar Dados do Ticket"):
                         for comment in comentarios:
                             texto = comment.get("body", "")
                             linhas = texto.split('\n')
-                            
-                            segs_neste_comentario = set()
                             for linha in linhas:
                                 match = re.search(r'_WK\d+_([A-Za-z0-9_]+)', linha.strip())
                                 if match:
                                     seg = match.group(1).strip().upper()
                                     if seg:
                                         seg = re.sub(r'_V\d+$', '', seg)
-                                        segs_neste_comentario.add(seg)
-                            
-                            # Se este comentário tinha segmentos, SUBSTITUI a memória anterior.
-                            # Assim ficamos apenas com a ÚLTIMA lista corrigida e ignoramos o passado.
-                            if segs_neste_comentario:
-                                segmentos_encontrados = segs_neste_comentario
+                                        segmentos_encontrados.add(seg)
                 
                 st.session_state['jira_dados'] = {
                     "ticket": ticket_input,
                     "lob": str(lob),
                     "titulo": str(titulo),
-                    "status": status_ticket, # Guarda o status
-                    "segmentos": sorted(list(segmentos_encontrados)),
+                    "status": status_ticket,
+                    "segmentos_originais": sorted(list(segmentos_encontrados)),
+                    "segmentos_ativos": sorted(list(segmentos_encontrados)),
                     "data_deploy": data_deploy
                 }
                 st.sidebar.success("✅ Metadados sincronizados!")
             else:
-                st.sidebar.error(f"Erro {resp_main.status_code}: Ticket não encontrado ou acesso negado.")
+                st.sidebar.error(f"Erro {resp_main.status_code}: Ticket não encontrado.")
     else:
         st.sidebar.warning("Digite um Ticket ID válido.")
+
+# --- NOVO: MENU DE AJUSTE FINO NA BARRA LATERAL ---
+if 'jira_dados' in st.session_state:
+    st.sidebar.divider()
+    st.sidebar.subheader("✏️ Ajuste Fino do Job")
+    jd = st.session_state['jira_dados']
+    
+    jd['status'] = st.sidebar.text_input("Status do Ticket:", jd.get('status', ''))
+    jd['data_deploy'] = st.sidebar.text_input("Data de Deploy:", jd.get('data_deploy', ''))
+    
+    # Caixa mágica: Mostra os segmentos e deixa apagar os errados
+    selecionados = st.sidebar.multiselect(
+        "Segmentos (Remova o lixo clicando no X):",
+        options=jd.get('segmentos_originais', []),
+        default=jd.get('segmentos_ativos', [])
+    )
+    st.session_state['jira_dados']['segmentos_ativos'] = selecionados
 
 # =====================================================================
 # FUNÇÕES DE PROCESSAMENTO (Coordenadora)
@@ -553,8 +563,7 @@ with tab1:
     
     if 'jira_dados' in st.session_state:
         jd = st.session_state['jira_dados']
-        data_deploy_texto = jd.get('data_deploy', 'N/A')
-        status_txt = jd.get('status', 'N/A')
+        st.info(f"**Ticket:** {jd['ticket']} ({jd.get('status', '')}) | **LOB:** {jd['lob']} | **Deploy:** {jd.get('data_deploy', '')} | **Segmentos:** {', '.join(jd['segmentos_ativos']) if jd.get('segmentos_ativos') else 'Nenhum'}")
         
         # Agora mostra o status real (ex: Fechada, Em Andamento) e os segmentos limpos
         st.info(f"**Ticket:** {jd['ticket']} ({status_txt}) | **LOB:** {jd['lob']} | **Deploy:** {data_deploy_texto} | **Segmentos:** {', '.join(jd['segmentos']) if jd['segmentos'] else 'Nenhum'}")
@@ -729,7 +738,9 @@ with tab1:
             jd = st.session_state['jira_dados']
             job_id = jd['ticket']
             lob = jd['lob']
-            segmentos = jd['segmentos'] if jd['segmentos'] else ["N_A"]
+            
+            # Puxa apenas os segmentos que você deixou selecionados no menu
+            segmentos = jd.get('segmentos_ativos', ["N_A"]) if jd.get('segmentos_ativos') else ["N_A"]
             
             data_hoje = datetime.datetime.now().strftime("%d/%m/%Y")
             data_deploy = jd.get('data_deploy', data_hoje)
