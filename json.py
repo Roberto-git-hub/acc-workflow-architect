@@ -371,7 +371,7 @@ def process_data(df):
     return final_json_data
 
 # =====================================================================
-# FUNÇÃO: GERADOR DE SUBJECTS ACC (Com Suporte a Excel Inteligente)
+# FUNÇÃO: GERADOR DE SUBJECTS ACC (Com Suporte a Excel Inteligente 2.0)
 # =====================================================================
 def generate_acc_subject_code(file_bytes, file_name):
     temp_subjects = []
@@ -379,27 +379,43 @@ def generate_acc_subject_code(file_bytes, file_name):
     # Se for um Excel (URL Matrix)
     if file_name.endswith(('.xlsx', '.xls')):
         try:
-            # Lemos o Excel sem cabeçalho para varrer a grelha livremente
-            df = pd.read_excel(io.BytesIO(file_bytes), header=None)
+            xls = pd.ExcelFile(io.BytesIO(file_bytes))
             
-            # Varre linha a linha procurando todos os SLs (horizontalmente)
-            for idx, row in df.iterrows():
-                for i, val in enumerate(row.values):
-                    if pd.notna(val):
-                        val_str = str(val).strip()
-                        # Se encontrar um código SL (ex: SL1, SL2)
-                        if re.match(r'^SL[_-]?\d+$', val_str, re.IGNORECASE):
-                            sl_code = val_str
+            # 1. Varre TODAS as abas da planilha (resolve o problema de estar noutra aba)
+            for sheet in xls.sheet_names:
+                df = pd.read_excel(xls, sheet_name=sheet, header=None)
+                
+                for idx, row in df.iterrows():
+                    for i, val in enumerate(row.values):
+                        if pd.notna(val):
+                            val_str = str(val).strip()
                             
-                            # O Subject Text na Matrix fica imediatamente à direita (coluna i+1)
+                            # Padrão A: SL e Texto na MESMA célula (Ex: "SL_1:\n[Name]...")
+                            match_same_cell = re.match(r'^\s*(SL[_-]?\d+)[:\-\s\n]+(.+)', val_str, re.IGNORECASE | re.DOTALL)
+                            
+                            # Padrão B: Apenas o código na célula (Ex: "SL1")
+                            match_exact = re.match(r'^\s*(SL[_-]?\d+)\s*$', val_str, re.IGNORECASE)
+                            
+                            sl_code = None
                             subject_text = ""
-                            if i + 1 < len(row.values) and pd.notna(row.values[i+1]):
-                                subject_text = str(row.values[i+1]).strip()
-                                # Limpa quebras de linha ocultas do Excel para não quebrar o JS
-                                subject_text = re.sub(r'\s+', ' ', subject_text)
                             
-                            if subject_text:
+                            if match_same_cell:
+                                sl_code = match_same_cell.group(1).strip()
+                                subject_text = match_same_cell.group(2).strip()
+                            elif match_exact:
+                                sl_code = match_exact.group(1).strip()
+                                # Tenta na célula à direita (horizontal)
+                                if i + 1 < len(row.values) and pd.notna(row.values[i+1]):
+                                    subject_text = str(row.values[i+1]).strip()
+                                # Se a direita estiver vazia, tenta na célula de baixo (vertical)
+                                elif idx + 1 < len(df) and pd.notna(df.iloc[idx+1, i]):
+                                    subject_text = str(df.iloc[idx+1, i]).strip()
+                                    
+                            if sl_code and subject_text:
+                                # Remove quebras de linha ocultas para não quebrar o código JS
+                                subject_text = re.sub(r'\s+', ' ', subject_text)
                                 normalized_code = re.sub(r'^SL[_-]?', 'SL_', sl_code, flags=re.IGNORECASE).upper()
+                                
                                 temp_subjects.append({
                                     "originalCode": sl_code,
                                     "normalizedCode": normalized_code,
