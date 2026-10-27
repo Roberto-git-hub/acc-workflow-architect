@@ -328,7 +328,7 @@ def process_data(df):
                     parts[0], parts[1] = parts[1], parts[0]
                     if len(sl_parts) >= 2: sl_parts[0], sl_parts[1] = sl_parts[1], sl_parts[0]
 
-            # Removemos qualquer barra forçadamente com .replace("/", "")
+            # FORCE REPLACEMENT OF ALL SLASHES
             code1 = parts[0].replace("(50%)", "").replace("50%:", "").replace("50%", "").replace("/", "").strip()
             code2 = parts[1] if len(parts) > 1 else code1
             code2 = code2.replace("(50%)", "").replace("50%:", "").replace("50%", "").replace("/", "").strip()
@@ -336,7 +336,7 @@ def process_data(df):
             sl_code1 = sl_parts[0].replace("(50%)", "").replace("50%:", "").replace("50%", "").replace("/", "").strip()
             sl_code2 = sl_parts[1] if len(sl_parts) > 1 else sl_code1
             sl_code2 = sl_code2.replace("(50%)", "").replace("50%:", "").replace("50%", "").replace("/", "").strip()
-            
+
             records = [
                 {"WaterfallId": waterfall_id, "DAGSegmentName": dag_segment_name, "CellName": cell_name, "Split": 0.5, "SegmentCode": code1, "SlineCode": sl_code1},
                 {"WaterfallId": waterfall_id + 1, "DAGSegmentName": dag_segment_name, "CellName": f"{cell_name}-test", "Split": 0.5, "SegmentCode": code2, "SlineCode": sl_code2}
@@ -351,7 +351,7 @@ def process_data(df):
                 r.update({"extraColumnA": "", "extraColumnB": "", "extraColumnC": ""})
                 final_json_data.append(r)
         else:
-            # Aplica a mesma limpeza à prova de falhas aos segmentos inteiros (100%)
+            # FORCE REPLACEMENT OF ALL SLASHES ON FULL BLOCKS
             code = segment_code.replace("(100%)", "").replace("100%:", "").replace("100%", "").replace("/", "").strip()
             sl_code = sline_code.replace("(100%)", "").replace("100%:", "").replace("100%", "").replace("/", "").strip()
             
