@@ -310,17 +310,13 @@ def process_data(df):
         is_split = has_split_in_code or has_split_in_volume
 
         if is_split:
-            # 1. Limpa todas as barras a mais NO FINAL das strings antes de dividir
-            clean_segment_code = segment_code.rstrip(" /")
-            clean_sline_code = sline_code.rstrip(" /")
-            
-            if "\n" in clean_segment_code: parts = [x.strip() for x in clean_segment_code.split("\n") if x.strip()]
-            elif "/" in clean_segment_code: parts = [x.strip() for x in clean_segment_code.split("/", 1)]
-            else: parts = [clean_segment_code, clean_segment_code]
+            if "\n" in segment_code: parts = [x.strip() for x in segment_code.split("\n") if x.strip()]
+            elif "/" in segment_code: parts = [x.strip() for x in segment_code.split("/", 1)]
+            else: parts = [segment_code, segment_code]
 
-            if "\n" in clean_sline_code: sl_parts = [x.strip() for x in clean_sline_code.split("\n") if x.strip()]
-            elif "/" in clean_sline_code: sl_parts = [x.strip() for x in clean_sline_code.split("/", 1)]
-            else: sl_parts = [clean_sline_code, clean_sline_code]
+            if "\n" in sline_code: sl_parts = [x.strip() for x in sline_code.split("\n") if x.strip()]
+            elif "/" in sline_code: sl_parts = [x.strip() for x in sline_code.split("/", 1)]
+            else: sl_parts = [sline_code, sline_code]
 
             if len(parts) >= 2:
                 p0_lower = parts[0].lower()
@@ -332,14 +328,19 @@ def process_data(df):
                     parts[0], parts[1] = parts[1], parts[0]
                     if len(sl_parts) >= 2: sl_parts[0], sl_parts[1] = sl_parts[1], sl_parts[0]
 
-            # 2. Agora as strings já não têm a barra final a atrapalhar
-            code1 = parts[0].replace("(50%)", "").replace("50%:", "").replace("50%", "").strip()
+            code1 = parts[0].replace("(50%)", "").replace("50%:", "").replace("50%", "")
             code2 = parts[1] if len(parts) > 1 else code1
-            code2 = code2.replace("(50%)", "").replace("50%:", "").replace("50%", "").strip()
+            code2 = code2.replace("(50%)", "").replace("50%:", "").replace("50%", "")
 
-            sl_code1 = sl_parts[0].replace("(50%)", "").replace("50%:", "").replace("50%", "").strip()
+            sl_code1 = sl_parts[0].replace("(50%)", "").replace("50%:", "").replace("50%", "")
             sl_code2 = sl_parts[1] if len(sl_parts) > 1 else sl_code1
-            sl_code2 = sl_code2.replace("(50%)", "").replace("50%:", "").replace("50%", "").strip()
+            sl_code2 = sl_code2.replace("(50%)", "").replace("50%:", "").replace("50%", "")
+
+            # --- LIMPEZA NUCLEAR --- (Destrói qualquer barra sobrevivente)
+            code1 = str(code1).replace("/", "").strip()
+            code2 = str(code2).replace("/", "").strip()
+            sl_code1 = str(sl_code1).replace("/", "").strip()
+            sl_code2 = str(sl_code2).replace("/", "").strip()
 
             records = [
                 {"WaterfallId": waterfall_id, "DAGSegmentName": dag_segment_name, "CellName": cell_name, "Split": 0.5, "SegmentCode": code1, "SlineCode": sl_code1},
@@ -355,9 +356,9 @@ def process_data(df):
                 r.update({"extraColumnA": "", "extraColumnB": "", "extraColumnC": ""})
                 final_json_data.append(r)
         else:
-            # Mantém a mesma lógica limpa para os segmentos 100%
-            code = segment_code.replace("(100%)", "").replace("100%:", "").replace("100%", "").rstrip(" /").strip()
-            sl_code = sline_code.replace("(100%)", "").replace("100%:", "").replace("100%", "").rstrip(" /").strip()
+            # LIMPEZA NUCLEAR PARA BLOCOS 100% TAMBÉM
+            code = str(segment_code).replace("(100%)", "").replace("100%:", "").replace("100%", "").replace("/", "").strip()
+            sl_code = str(sline_code).replace("(100%)", "").replace("100%:", "").replace("100%", "").replace("/", "").strip()
             
             record = {"WaterfallId": waterfall_id, "DAGSegmentName": dag_segment_name, "CellName": cell_name, "Split": 1.0, "SegmentCode": code, "SlineCode": sl_code}
             waterfall_id += 1
@@ -370,7 +371,6 @@ def process_data(df):
             final_json_data.append(record)
 
     return final_json_data
-
 # =====================================================================
 # FUNCTION: ACC SUBJECT GENERATOR
 # =====================================================================
