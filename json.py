@@ -627,9 +627,16 @@ with tab1:
                     else:
                         st.write("None")
 
-                for obj in json_objects: obj.pop("_Source", None)
+                for obj in json_objects:
+                    obj.pop("_Source", None)
+                    # Limpeza Final Extrema de Barras
+                    if "SegmentCode" in obj and obj["SegmentCode"]:
+                        obj["SegmentCode"] = str(obj["SegmentCode"]).replace("/", "").strip()
+                    if "SlineCode" in obj and obj["SlineCode"]:
+                        obj["SlineCode"] = str(obj["SlineCode"]).replace("/", "").strip()
                     
                 json_string = json.dumps(json_objects, indent=2)
+                
                 compressed_data = zlib.compress(json_string.encode('utf-8'))
                 encoded_data = base64.urlsafe_b64encode(compressed_data).decode('utf-8')
                 shareable_link = f"https://upgraded-guide-bxpthdptstyfwaor2naznv.streamlit.app?data={encoded_data}"
