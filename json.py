@@ -227,6 +227,7 @@ def extract_metadata(file_bytes, file_name, sheet_name=None):
             if pd.notna(row.values[notes_col_idx]) and note_val and note_val.lower() not in ['nan', 'notes']:
                 if note_val not in meta["notes"]: meta["notes"].append(note_val)
     return meta
+
 @st.cache_data
 def load_and_clean_data(file_bytes, file_name, sheet_name=None):
     if file_name.endswith('.csv'):
@@ -327,13 +328,13 @@ def process_data(df):
                     parts[0], parts[1] = parts[1], parts[0]
                     if len(sl_parts) >= 2: sl_parts[0], sl_parts[1] = sl_parts[1], sl_parts[0]
 
-            code1 = parts[0].replace("(50%)", "").replace("50%:", "").replace("50%", "").strip()
+            code1 = parts[0].replace("(50%)", "").replace("50%:", "").replace("50%", "").strip(" /")
             code2 = parts[1] if len(parts) > 1 else code1
-            code2 = code2.replace("(50%)", "").replace("50%:", "").replace("50%", "").strip()
+            code2 = code2.replace("(50%)", "").replace("50%:", "").replace("50%", "").strip(" /")
 
-            sl_code1 = sl_parts[0].replace("(50%)", "").replace("50%:", "").replace("50%", "").strip()
+            sl_code1 = sl_parts[0].replace("(50%)", "").replace("50%:", "").replace("50%", "").strip(" /")
             sl_code2 = sl_parts[1] if len(sl_parts) > 1 else sl_code1
-            sl_code2 = sl_code2.replace("(50%)", "").replace("50%:", "").replace("50%", "").strip()
+            sl_code2 = sl_code2.replace("(50%)", "").replace("50%:", "").replace("50%", "").strip(" /")
 
             records = [
                 {"WaterfallId": waterfall_id, "DAGSegmentName": dag_segment_name, "CellName": cell_name, "Split": 0.5, "SegmentCode": code1, "SlineCode": sl_code1},
@@ -349,8 +350,8 @@ def process_data(df):
                 r.update({"extraColumnA": "", "extraColumnB": "", "extraColumnC": ""})
                 final_json_data.append(r)
         else:
-            code = segment_code.replace("(100%)", "").replace("100%:", "").replace("100%", "").strip()
-            sl_code = sline_code.replace("(100%)", "").replace("100%:", "").replace("100%", "").strip()
+            code = segment_code.replace("(100%)", "").replace("100%:", "").replace("100%", "").strip(" /")
+            sl_code = sline_code.replace("(100%)", "").replace("100%:", "").replace("100%", "").strip(" /")
             
             record = {"WaterfallId": waterfall_id, "DAGSegmentName": dag_segment_name, "CellName": cell_name, "Split": 1.0, "SegmentCode": code, "SlineCode": sl_code}
             waterfall_id += 1
@@ -817,12 +818,8 @@ with tab2:
                                 except: pass
                             
                         ws_target.title = nome_aba
-                                           
-                        ws_target["F2"] = job_id
-                        ws_target["F3"] = seg_name
-                        ws_target["F4"] = reviewer
-                        
-                        ws_target["F6"] = datetime.datetime.now().strftime("%m/%d/%Y")
+                        # NEW: Clean Excel injection
+                        ws_target["F2"] = f"{job_id}"; ws_target["F3"] = f"{seg_name}"; ws_target["F4"] = reviewer; ws_target["F6"] = datetime.datetime.now().strftime("%m/%d/%Y")
                     
                     rev_stream = io.BytesIO(); wb_rev.save(rev_stream)
                     zip_file.writestr(f"{qa_geral_path}/Review Jobs Samsung - {job_id}.xlsx", rev_stream.getvalue())
