@@ -806,7 +806,7 @@ with tab2:
                             
                         ws_target.title = nome_aba
                         # NOVO: Injeção no Excel limpa
-                        ws_target["F2"] = f"EX; {job_id}"; ws_target["F3"] = f"EX; {seg_name}"; ws_target["F4"] = reviewer; ws_target["F6"] = datetime.datetime.now().strftime("%m/%d/%Y")
+                        ws_target["F2"] = f"{job_id}"; ws_target["F3"] = f"{seg_name}"; ws_target["F4"] = reviewer; ws_target["F6"] = datetime.datetime.now().strftime("%m/%d/%Y")
                     
                     rev_stream = io.BytesIO(); wb_rev.save(rev_stream)
                     zip_file.writestr(f"{qa_geral_path}/Review Jobs Samsung - {job_id}.xlsx", rev_stream.getvalue())
