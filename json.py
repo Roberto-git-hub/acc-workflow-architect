@@ -354,11 +354,15 @@ def process_data(df):
                     r["DAGSCount"] = dag_count
                     r["isABTest"] = "FALSE"
                 r.update({"extraColumnA": "", "extraColumnB": "", "extraColumnC": ""})
+                
+                # --- LIMPEZA FINAL DO SCRIPT ANTES DE SALVAR ---
+                r["SegmentCode"] = str(r["SegmentCode"]).replace("/", "").strip()
+                r["SlineCode"] = str(r["SlineCode"]).replace("/", "").strip()
+                
                 final_json_data.append(r)
         else:
-            # LIMPEZA NUCLEAR PARA BLOCOS 100% TAMBÉM
-            code = str(segment_code).replace("(100%)", "").replace("100%:", "").replace("100%", "").replace("/", "").strip()
-            sl_code = str(sline_code).replace("(100%)", "").replace("100%:", "").replace("100%", "").replace("/", "").strip()
+            code = segment_code.replace("(100%)", "").replace("100%:", "").replace("100%", "").strip()
+            sl_code = sline_code.replace("(100%)", "").replace("100%:", "").replace("100%", "").strip()
             
             record = {"WaterfallId": waterfall_id, "DAGSegmentName": dag_segment_name, "CellName": cell_name, "Split": 1.0, "SegmentCode": code, "SlineCode": sl_code}
             waterfall_id += 1
@@ -368,6 +372,11 @@ def process_data(df):
                 record["DAGSCount"] = dag_count
                 record["isABTest"] = "FALSE"
             record.update({"extraColumnA": "", "extraColumnB": "", "extraColumnC": ""})
+            
+            # --- LIMPEZA FINAL DO SCRIPT ANTES DE SALVAR ---
+            record["SegmentCode"] = str(record["SegmentCode"]).replace("/", "").strip()
+            record["SlineCode"] = str(record["SlineCode"]).replace("/", "").strip()
+            
             final_json_data.append(record)
 
     return final_json_data
