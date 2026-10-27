@@ -16,11 +16,11 @@ from openpyxl.drawing.image import Image as xlImage
 import copy
 
 # =====================================================================
-# INTERFACE STREAMLIT - CONFIGURAÇÃO (LAYOUT WIDE)
+# STREAMLIT INTERFACE - CONFIGURATION (WIDE LAYOUT)
 # =====================================================================
 st.set_page_config(page_title="Netbiis Automation", layout="wide", page_icon="⚙️", initial_sidebar_state="collapsed")
 
-# --- INJEÇÃO DE CSS AVANÇADO (ULTRA PREMIUM UI) ---
+# --- ADVANCED CSS INJECTION (ULTRA PREMIUM UI) ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
@@ -29,10 +29,12 @@ st.markdown("""
         font-family: 'Inter', sans-serif !important;
     }
 
+    /* Hides the hamburger menu and default Streamlit footer for a cleaner look */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
+    /* More elegant titles */
     h1 {
         background: -webkit-linear-gradient(45deg, #0071e3, #40E0D0);
         -webkit-background-clip: text;
@@ -46,6 +48,7 @@ st.markdown("""
         letter-spacing: -0.5px;
     }
 
+    /* Main buttons styling */
     .stButton>button {
         border-radius: 8px !important;
         font-weight: 600 !important;
@@ -61,6 +64,7 @@ st.markdown("""
         color: #FFFFFF !important;
     }
     
+    /* Primary buttons */
     .stButton>button[data-baseweb="button"].st-emotion-cache-1r6slb0 {
         background: linear-gradient(135deg, #0071e3, #005bb5) !important;
         color: white !important;
@@ -72,6 +76,7 @@ st.markdown("""
         box-shadow: 0 8px 25px rgba(0, 113, 227, 0.5) !important;
     }
 
+    /* Metric Cards (Dashboard style) */
     div[data-testid="metric-container"] {
         background: linear-gradient(145deg, #1A1C23, #121418);
         border: 1px solid #2A2D35;
@@ -85,6 +90,7 @@ st.markdown("""
         border-color: #0071e3;
         box-shadow: 0 8px 25px rgba(0, 113, 227, 0.15);
     }
+    /* Metric label color */
     div[data-testid="metric-container"] > div > div > div {
         color: #8E8E93 !important;
         font-weight: 500 !important;
@@ -112,6 +118,7 @@ st.markdown("""
         font-weight: 600 !important;
     }
     
+    /* Info/Success/Error boxes with softer corners */
     div.stAlert {
         border-radius: 10px !important;
         border: 1px solid rgba(255,255,255,0.05) !important;
@@ -133,7 +140,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =====================================================================
-# MODO LEITOR DE LINK (Operador)
+# LINK READER MODE (Operator)
 # =====================================================================
 if 'data' in st.query_params:
     try:
@@ -151,13 +158,13 @@ if 'data' in st.query_params:
         st.stop()
 
 # =====================================================================
-# LOGO NO TOPO
+# TOP LOGO
 # =====================================================================
 if os.path.exists("logo_netbiis.png"):
     st.image("logo_netbiis.png", width=180)
 
 # =====================================================================
-# FUNÇÕES DE PROCESSAMENTO (Coordenadora)
+# PROCESSING FUNCTIONS (Coordinator)
 # =====================================================================
 @st.cache_data
 def extract_metadata(file_bytes, file_name, sheet_name=None):
@@ -192,11 +199,11 @@ def extract_metadata(file_bytes, file_name, sheet_name=None):
         elif col0 == "user": meta["user"] = col1
         elif col0 == "cid": meta["cid"] = re.sub(r'(?i)_segment$', '', col1).strip()
         
-        # 1. Identifica exatamente o bloco da Audiência
+        # 1. Identifies the Audience block exactly
         elif "audience selection" in col0: 
             current_mode = "audience"
             
-        # 2. Aceita "INCLUDE" sozinho sem quebrar o bloco da Audiência
+        # 2. Accepts "INCLUDE" alone without breaking the Audience block
         elif col0 in ["only include", "include"]: 
             if current_mode != "audience":
                 current_mode = "include"
@@ -358,7 +365,7 @@ def process_data(df):
     return final_json_data
 
 # =====================================================================
-# FUNÇÃO: GERADOR DE SUBJECTS ACC
+# FUNCTION: ACC SUBJECT GENERATOR
 # =====================================================================
 def generate_acc_subject_code(file_bytes, file_name):
     temp_subjects = []
@@ -459,7 +466,7 @@ def generate_acc_subject_code(file_bytes, file_name):
     return subject_lines, code
 
 # =====================================================================
-# INTERFACE STREAMLIT - ABAS PRINCIPAIS
+# STREAMLIT INTERFACE - MAIN TABS
 # =====================================================================
 st.title("🛠️ Netbiis Automation Portal")
 st.markdown("<p style='color: #8E8E93; font-size: 16px;'>Automate workflow structures, generate code, and compile package deliverables seamlessly.</p>", unsafe_allow_html=True)
@@ -468,7 +475,7 @@ st.divider()
 tab1, tab2, tab3 = st.tabs(["⚙️ JSON Converter", "📦 ZIP Generator", "✉️ ACC Subject Generator"])
 
 # ---------------------------------------------------------------------
-# ABA 1: GERADOR DE JSON (Waterfall)
+# TAB 1: JSON GENERATOR (Waterfall)
 # ---------------------------------------------------------------------
 with tab1:
     
@@ -481,6 +488,7 @@ with tab1:
         segmentos_lista = jd.get('segmentos_ativos', [])
         segmentos_txt = ', '.join(segmentos_lista) if segmentos_lista else 'None'
         
+        # Visually highlighted status banner with soft background
         st.markdown(f"""
         <div style="background-color: rgba(48, 209, 88, 0.1); border-left: 4px solid #30D158; padding: 15px; border-radius: 8px; margin-bottom: 25px;">
             <span style="color: #30D158; font-weight: 600;">🟢 Active Ticket:</span> {ticket_id} ({status_txt}) &nbsp;|&nbsp; 
@@ -517,6 +525,7 @@ with tab1:
             if st.button("🚀 Analyze and Generate Structure", type="primary"):
                 json_objects = process_data(df)
                 
+                # --- METADATA IN CARDS ---
                 st.markdown("<br><h3>📊 Campaign Metadata</h3>", unsafe_allow_html=True)
                 colA, colB, colC = st.columns(3)
                 with colA: st.metric("Campaign Name", meta.get('campaign_name', 'N/A'))
@@ -529,6 +538,7 @@ with tab1:
                     st.markdown("#### 💡 Personalization Notes")
                     for note in meta.get("notes", []): st.info(note)
 
+                # --- AUDIT ---
                 st.markdown("<br><h3>🕵️‍♂️ Matrix Audit</h3>", unsafe_allow_html=True)
                 
                 errors = []
@@ -557,6 +567,7 @@ with tab1:
                 if not errors and not warnings:
                     st.success("✅ Flawless matrix! No structural anomalies found.")
 
+                # --- WATERFALL OVERVIEW IN CARDS ---
                 st.markdown("<br><h3>📈 Waterfall Overview</h3>", unsafe_allow_html=True)
                 
                 total_segments = len(json_objects)
@@ -578,7 +589,7 @@ with tab1:
                 # --- TARGETING RULES ---
                 st.markdown("<br><h3>🛑 Targeting Rules</h3>", unsafe_allow_html=True)
                 
-                # Exibe a Audiência (Público Alvo) numa caixa de destaque larga
+                # Displays the Audience in a wide highlighted box
                 if meta.get("audience"):
                     st.info("**👥 AUDIENCE SELECTION:**\n" + "\n".join([f"- {item}" for item in meta["audience"]]))
                 
@@ -607,6 +618,7 @@ with tab1:
                 encoded_data = base64.urlsafe_b64encode(compressed_data).decode('utf-8')
                 shareable_link = f"https://upgraded-guide-bxpthdptstyfwaor2naznv.streamlit.app?data={encoded_data}"
 
+                # --- EXPANDERS TO KEEP THE SCREEN CLEAN ---
                 st.markdown("<br><h3>💻 Output Deliverables</h3>", unsafe_allow_html=True)
                 
                 with st.expander("🔗 Open Shareable Link (For Workflow Configurator)", expanded=True):
@@ -621,7 +633,7 @@ with tab1:
             st.error(f"An error occurred while processing the file: {e}")
 
 # ---------------------------------------------------------------------
-# ABA 2: GERADOR DE ESTRUTURA ZIP & JIRA CONNECTION
+# TAB 2: ZIP STRUCTURE GENERATOR & JIRA CONNECTION
 # ---------------------------------------------------------------------
 with tab2:
     st.markdown("### 📦 Generate Package & QA Folders")
@@ -630,7 +642,7 @@ with tab2:
     with st.container(border=True):
         st.markdown("#### 🔌 1. Jira Connection")
         
-        # Variáveis seguras
+        # Secure variables
         try:
             JIRA_EMAIL = st.secrets["JIRA_EMAIL"]
             JIRA_TOKEN = st.secrets["JIRA_TOKEN"]
@@ -680,7 +692,7 @@ with tab2:
                             data_deploy = f"{dia.zfill(2)}/{mes.zfill(2)}/{ano_atual}"
                         else: data_deploy = datetime.datetime.now().strftime("%m/%d/%Y")
                         
-                        ## --- Captura do dono do ticket principal como fallback ---
+                        ## --- Capture the main ticket owner as fallback ---
                         assignee_main = campos.get("assignee")
                         qa_reviewer_name = assignee_main.get("displayName", "N/A") if assignee_main else "N/A"
                         
@@ -689,7 +701,7 @@ with tab2:
                         
                         for sub in subtasks:
                             sub_key = sub.get("key")
-                            # Extrai a sub-task completa via API
+                            # Extracts the full sub-task via API
                             url_sub = f"{JIRA_URL}/rest/api/2/issue/{sub_key}"
                             resp_sub = requests.get(url_sub, headers=headers, auth=auth)
                             
@@ -697,7 +709,7 @@ with tab2:
                                 sub_data = resp_sub.json()
                                 sub_fields = sub_data.get("fields", {})
                                 
-                                # 1. Extração de Segmentos
+                                # 1. Segments Extraction
                                 comentarios = sub_fields.get("comment", {}).get("comments", [])
                                 for comment in comentarios:
                                     linhas = comment.get("body", "").split('\n')
@@ -707,11 +719,11 @@ with tab2:
                                             seg = match.group(1).strip().upper()
                                             if seg: segmentos_encontrados.add(re.sub(r'_V\d+$', '', seg))
                                             
-                                # 2. Procura Assignee Específico APENAS de QA (Ignora HTML Proof)
+                                # 2. Looks for Specific Assignee ONLY for QA (Ignores HTML Proof)
                                 sub_summary = sub_fields.get("summary", "").upper()
                                 if "1A QA" in sub_summary or "QA REVIEW" in sub_summary:
                                     sub_assignee = sub_fields.get("assignee")
-                                    if sub_assignee: # Só substitui se houver alguém atribuído à 1A
+                                    if sub_assignee: # Only replaces if someone is assigned to 1A
                                         qa_reviewer_name = sub_assignee.get("displayName", qa_reviewer_name)
                         
                         st.session_state['jira_dados'] = {
@@ -729,7 +741,7 @@ with tab2:
         jd = st.session_state['jira_dados']
         
         st.markdown("<br><h4>✏️ 2. Job Fine-Tuning</h4>", unsafe_allow_html=True)
-        # NOVO: 3 colunas para acomodar o Reviewer
+        # NEW: 3 columns to accommodate the Reviewer
         colA, colB, colC = st.columns(3)
         with colA: jd['status'] = st.text_input("Ticket Status:", jd.get('status', ''))
         with colB: jd['data_deploy'] = st.text_input("Deployment Date:", jd.get('data_deploy', ''))
@@ -748,7 +760,7 @@ with tab2:
             lob = jd['lob']
             segmentos = jd.get('segmentos_ativos', ["N_A"]) if jd.get('segmentos_ativos') else ["N_A"]
             data_deploy = jd.get('data_deploy', datetime.datetime.now().strftime("%m/%d/%Y"))
-            # NOVO: Puxa o reviewer dinâmico
+            # NEW: Pulls dynamic reviewer
             reviewer = jd.get('reviewer', 'N/A')
             
             zip_buffer = io.BytesIO()
@@ -805,7 +817,7 @@ with tab2:
                                 except: pass
                             
                         ws_target.title = nome_aba
-                        # NOVO: Injeção no Excel limpa
+                        # NEW: Clean Excel injection
                         ws_target["F2"] = f"{job_id}"; ws_target["F3"] = f"{seg_name}"; ws_target["F4"] = reviewer; ws_target["F6"] = datetime.datetime.now().strftime("%m/%d/%Y")
                     
                     rev_stream = io.BytesIO(); wb_rev.save(rev_stream)
@@ -841,7 +853,7 @@ with tab2:
                                 except: pass
                             
                         ws_target.title = nome_aba
-                        # NOVO: Injeção no Excel limpa
+                        # NEW: Clean Excel injection
                         ws_target["D1"] = f"Reviewed by: {reviewer}"; ws_target["D2"] = f"LOB:{lob}"; ws_target["D3"] = f"JIRA Ticket: {job_id}"
                         ws_target["D4"] = f"Segment: {seg_name}"; ws_target["D5"] = data_deploy
                         
@@ -854,7 +866,7 @@ with tab2:
             st.download_button("📦 Download Local ZIP", data=zip_buffer.getvalue(), file_name=f"{job_id}_Architecture.zip", mime="application/zip", use_container_width=True)
 
 # ---------------------------------------------------------------------
-# ABA 3: GERADOR DE SUBJECTS (ACC)
+# TAB 3: SUBJECT GENERATOR (ACC)
 # ---------------------------------------------------------------------
 with tab3:
     st.markdown("### ✉️ ACC Intelligent Subject Extractor")
