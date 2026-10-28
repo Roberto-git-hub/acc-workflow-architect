@@ -395,7 +395,7 @@ def generate_acc_subject_code(file_bytes, file_name):
 
         df = pd.read_excel(xls, sheet_name=sheet_to_use, header=None)
 
-        # 1. MOTOR DE EXTRAÇÃO DE TEXTO (Caça os 3 padrões da Samsung)
+        # 1. MOTOR DE EXTRAÇÃO DE TEXTO
         for idx, row in df.iterrows():
             for i, val in enumerate(row.values):
                 if pd.notna(val):
@@ -435,13 +435,12 @@ def generate_acc_subject_code(file_bytes, file_name):
                         else:
                             subjects_data[sl_code]["first_name"] = subject_text
 
-        # Limpa dados vazios
         subjects_data = {k: v for k, v in subjects_data.items() if v["first_name"] or v["no_first_name"]}
 
         if not subjects_data:
             return None, "Não foi possível extrair Subject Lines nesta aba."
 
-        # 2. GERAÇÃO DO CÓDIGO E4X (Focado estritamente no slineCode)
+        # 2. GERAÇÃO DO CÓDIGO E4X
         code = "<%\n"
         code += "    var nameProper = recipient.firstName ? recipient.firstName.charAt(0).toUpperCase() + recipient.firstName.substring(1).toLowerCase() : \"\";\n"
         code += "    var subject = \"\";\n"
@@ -464,8 +463,9 @@ def generate_acc_subject_code(file_bytes, file_name):
             
             code += f"\n      {cond_prefix} (targetData.slineCode == '{sl_code}') {{\n"
             
-            text_fn = data.get("first_name", "")
-            text_nofn = data.get("no_first_name", "")
+            # --- NOVO: Remove quebras de linha e espaços duplos do Excel ---
+            text_fn = " ".join(data.get("first_name", "").split())
+            text_nofn = " ".join(data.get("no_first_name", "").split())
             
             # CENÁRIO 1: Matriz não pede nome (texto estático)
             if not text_fn and text_nofn:
@@ -473,7 +473,7 @@ def generate_acc_subject_code(file_bytes, file_name):
                 code += f"        if (hasFirstName) {{\n          subject = \"{text_nofn_clean}\";\n        }} else {{\n          subject = \"{text_nofn_clean}\";\n        }}\n      }}"
                 preview_data.append({"originalCode": sl_code, "text": text_nofn})
                 
-            # CENÁRIO 2: Matriz pede nome, gera a versão com e sem nome automaticamente
+            # CENÁRIO 2: Matriz pede nome, mas só forneceu uma frase
             elif text_fn and not text_nofn:
                 text_nofn = re.sub(r'\[Name\]\s*,?\s*', '', text_fn, flags=re.IGNORECASE).strip()
                 if text_nofn: text_nofn = text_nofn[0].upper() + text_nofn[1:]
@@ -487,7 +487,6 @@ def generate_acc_subject_code(file_bytes, file_name):
             # CENÁRIO 3: A matriz tem as duas versões explícitas
             else:
                 text_fn_clean = re.sub(r'\[Name\]\s*,?\s*', '', text_fn, flags=re.IGNORECASE).strip()
-                # Apenas converte para minúscula se a frase original começou com [Name]
                 if text_fn.lower().strip().startswith("[name]"):
                     if text_fn_clean: text_fn_clean = text_fn_clean[0].lower() + text_fn_clean[1:]
                 
