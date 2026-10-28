@@ -199,11 +199,9 @@ def extract_metadata(file_bytes, file_name, sheet_name=None):
         elif col0 == "user": meta["user"] = col1
         elif col0 == "cid": meta["cid"] = re.sub(r'(?i)_segment$', '', col1).strip()
         
-        # 1. Identifies the Audience block exactly
-        elif "audience selection" in col0: 
+        if "audience selection" in col0: 
             current_mode = "audience"
             
-        # 2. Accepts "INCLUDE" alone without breaking the Audience block
         elif col0 in ["only include", "include"]: 
             if current_mode != "audience":
                 current_mode = "include"
@@ -348,6 +346,11 @@ def process_data(df):
                     r["DAGSCount"] = dag_count
                     r["isABTest"] = "FALSE"
                 r.update({"extraColumnA": "", "extraColumnB": "", "extraColumnC": ""})
+                
+                # --- LIMPEZA FINAL DO SCRIPT ANTES DE SALVAR ---
+                r["SegmentCode"] = str(r["SegmentCode"]).replace("/", "").strip()
+                r["SlineCode"] = str(r["SlineCode"]).replace("/", "").strip()
+                
                 final_json_data.append(r)
         else:
             code = str(segment_code).replace("(100%)", "").replace("100%:", "").replace("100%", "").replace("/", "").strip()
@@ -361,6 +364,11 @@ def process_data(df):
                 record["DAGSCount"] = dag_count
                 record["isABTest"] = "FALSE"
             record.update({"extraColumnA": "", "extraColumnB": "", "extraColumnC": ""})
+            
+            # --- LIMPEZA FINAL DO SCRIPT ANTES DE SALVAR ---
+            record["SegmentCode"] = str(record["SegmentCode"]).replace("/", "").strip()
+            record["SlineCode"] = str(record["SlineCode"]).replace("/", "").strip()
+            
             final_json_data.append(record)
 
     return final_json_data
@@ -386,10 +394,11 @@ def generate_acc_subject_code(file_bytes, file_name):
 
         df = pd.read_excel(xls, sheet_name=sheet_to_use, header=None)
         
-        # 1. MAPEAMENTO DE SEGMENT CODES E SL CODES (Ex: "V1_Test | SL1")
+        # 1. MAPEAMENTO AVANÇADO DE SEGMENT CODES E SL CODES
         for idx, row in df.iterrows():
             for val in row.dropna():
                 val_str = str(val).strip()
+                # Verifica se a célula contém "|" e a palavra "SL"
                 if "|" in val_str and "SL" in val_str.upper():
                     parts = [p.strip() for p in val_str.split("|")]
                     if len(parts) == 2:
@@ -397,17 +406,23 @@ def generate_acc_subject_code(file_bytes, file_name):
                         part1_upper = parts[1].upper()
                         
                         if part1_upper.startswith("SL"):
-                            seg_code, sl_code = parts[0], part1_upper
+                            base_seg, sl_code = parts[0], part1_upper
                         elif part0_upper.startswith("SL"):
-                            sl_code, seg_code = part0_upper, parts[1]
+                            sl_code, base_seg = part0_upper, parts[1]
                         else:
                             continue
                             
                         sl_code = sl_code.replace(" ", "")
                         if sl_code not in sl_to_segment:
                             sl_to_segment[sl_code] = []
-                        if seg_code not in sl_to_segment[sl_code]:
-                            sl_to_segment[sl_code].append(seg_code)
+                            
+                        # Adiciona a versão completa da string (ex: "V1_Test | SL1")
+                        if val_str not in sl_to_segment[sl_code]:
+                            sl_to_segment[sl_code].append(val_str)
+                            
+                        # Adiciona a versão curta do código (ex: "V1_Test")
+                        if base_seg and base_seg not in sl_to_segment[sl_code]:
+                            sl_to_segment[sl_code].append(base_seg)
 
         # 2. EXTRAÇÃO DOS TEXTOS DOS ASSUNTOS ("First name present" e "No first name")
         for idx, row in df.iterrows():
@@ -435,7 +450,7 @@ def generate_acc_subject_code(file_bytes, file_name):
         if not subjects_data:
             return None, "No structure like 'SL1 (First name present)' or 'V1_Test | SL1' was found in the matrix."
 
-        # 3. GERAÇÃO DO CÓDIGO E4X (Focado no SegmentCode)
+        # 3. GERAÇÃO DO CÓDIGO E4X (Focado no SegmentCode, englobando Test e Control)
         code = "<%\n"
         code += "var nameProper = recipient.firstName ? recipient.firstName.charAt(0).toUpperCase() + recipient.firstName.substring(1).toLowerCase() : \"\";\n"
         code += "var subject = \"\";\n"
@@ -447,10 +462,11 @@ def generate_acc_subject_code(file_bytes, file_name):
         for sl_code, data in subjects_data.items():
             segments = data.get("segments", [])
             
-            # Se a planilha não mapear o SegmentCode à linha do SL, faz fallback pelo SL Code
+            # Se a matriz falhar no mapeamento, faz o fallback para garantir funcionamento
             if not segments:
                 segments = [sl_code]
                 
+            # Aqui é onde a magia acontece: junta V1_Test, V1_Test | SL1, V2_Control, V2_Control | SL1
             condicoes = " || ".join([f"targetData.segmentCode == '{seg}'" for seg in segments])
             cond_prefix = "if" if is_first else "else if"
             is_first = False
@@ -465,7 +481,7 @@ def generate_acc_subject_code(file_bytes, file_name):
             
             code += f"    if (hasFirstName) {{\n      subject = nameProper + \", {text_fn_clean}\";\n    }} else {{\n      subject = \"{text_nofn}\";\n    }}\n  }}"
             
-            preview_data.append({"originalCode": " | ".join(segments), "text": data.get("no_first_name", data.get("first_name", ""))})
+            preview_data.append({"originalCode": " || ".join(segments), "text": data.get("no_first_name", data.get("first_name", ""))})
             
         code += "\n%>\n<%= subject %>\n<%\nif( subject == '' || subject == undefined ) {\n"
         code += "  var attemptedCode = targetData.segmentCode || \"UNKNOWN\";\n"
@@ -499,7 +515,6 @@ with tab1:
         segmentos_lista = jd.get('segmentos_ativos', [])
         segmentos_txt = ', '.join(segmentos_lista) if segmentos_lista else 'None'
         
-        # Visually highlighted status banner with soft background
         st.markdown(f"""
         <div style="background-color: rgba(48, 209, 88, 0.1); border-left: 4px solid #30D158; padding: 15px; border-radius: 8px; margin-bottom: 25px;">
             <span style="color: #30D158; font-weight: 600;">🟢 Active Ticket:</span> {ticket_id} ({status_txt}) &nbsp;|&nbsp; 
@@ -536,7 +551,6 @@ with tab1:
             if st.button("🚀 Analyze and Generate Structure", type="primary"):
                 json_objects = process_data(df)
                 
-                # --- METADATA IN CARDS ---
                 st.markdown("<br><h3>📊 Campaign Metadata</h3>", unsafe_allow_html=True)
                 colA, colB, colC = st.columns(3)
                 with colA: st.metric("Campaign Name", meta.get('campaign_name', 'N/A'))
@@ -549,7 +563,6 @@ with tab1:
                     st.markdown("#### 💡 Personalization Notes")
                     for note in meta.get("notes", []): st.info(note)
 
-                # --- AUDIT ---
                 st.markdown("<br><h3>🕵️‍♂️ Matrix Audit</h3>", unsafe_allow_html=True)
                 
                 errors = []
@@ -578,7 +591,6 @@ with tab1:
                 if not errors and not warnings:
                     st.success("✅ Flawless matrix! No structural anomalies found.")
 
-                # --- WATERFALL OVERVIEW IN CARDS ---
                 st.markdown("<br><h3>📈 Waterfall Overview</h3>", unsafe_allow_html=True)
                 
                 total_segments = len(json_objects)
@@ -597,7 +609,6 @@ with tab1:
                     chart_data = pd.DataFrame({"Segment": [obj.get("CellName") for obj in json_objects], "Volume": [float(obj.get("DAGSCount", 0)) for obj in json_objects]})
                     st.bar_chart(chart_data.set_index("Segment"))
 
-                # --- TARGETING RULES ---
                 st.markdown("<br><h3>🛑 Targeting Rules</h3>", unsafe_allow_html=True)
                 
                 if meta.get("audience"):
@@ -621,10 +632,8 @@ with tab1:
                     else:
                         st.write("None")
 
-                # Remove _Source from final output
                 for obj in json_objects:
                     obj.pop("_Source", None)
-                    # Limpeza Final Extrema de Barras
                     if "SegmentCode" in obj and obj["SegmentCode"]:
                         obj["SegmentCode"] = str(obj["SegmentCode"]).replace("/", "").strip()
                     if "SlineCode" in obj and obj["SlineCode"]:
@@ -635,7 +644,6 @@ with tab1:
                 encoded_data = base64.urlsafe_b64encode(compressed_data).decode('utf-8')
                 shareable_link = f"https://upgraded-guide-bxpthdptstyfwaor2naznv.streamlit.app?data={encoded_data}"
 
-                # --- EXPANDERS TO KEEP THE SCREEN CLEAN ---
                 st.markdown("<br><h3>💻 Output Deliverables</h3>", unsafe_allow_html=True)
                 
                 with st.expander("🔗 Open Shareable Link (For Workflow Configurator)", expanded=True):
