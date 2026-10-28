@@ -374,83 +374,129 @@ def process_data(df):
     return final_json_data
 
 # =====================================================================
-# FUNCTION: ACC SUBJECT GENERATOR (SAMSUNG URL MATRIX OPTIMIZED)
+# FUNCTION: ACC SUBJECT GENERATOR (SAMSUNG OMNI-FORMAT OPTIMIZED)
 # =====================================================================
 def generate_acc_subject_code(file_bytes, file_name):
     subjects_data = {}
     sl_to_segment = {}
     
     if not file_name.endswith(('.xlsx', '.xls')):
-        return None, "Please upload the Samsung Excel (URL Matrix) file."
+        return None, "Please upload the Samsung Excel file."
 
     try:
         xls = pd.ExcelFile(io.BytesIO(file_bytes))
         sheet_to_use = None
+        
+        # Tenta encontrar a aba ideal, mas se não encontrar, procura em todas
         for s in xls.sheet_names:
-            if 'url' in s.lower() or 'matrix' in s.lower():
+            s_lower = s.lower()
+            if 'url' in s_lower or 'matrix' in s_lower or 'copy' in s_lower or 'sl' in s_lower:
                 sheet_to_use = s
                 break
         if not sheet_to_use: sheet_to_use = xls.sheet_names[0]
 
         df = pd.read_excel(xls, sheet_name=sheet_to_use, header=None)
         
-        # 1. MAPEAMENTO AVANÇADO DE SEGMENT CODES E SL CODES
+        # 1. MOTOR DE MAPEAMENTO (Caça os 3 padrões diferentes da Samsung)
         for idx, row in df.iterrows():
+            row_vals = row.values
+            
+            # Padrão 1: "V1_Test | SL1" (URL Matrix)
             for val in row.dropna():
                 val_str = str(val).strip()
-                # Verifica se a célula contém "|" e a palavra "SL"
                 if "|" in val_str and "SL" in val_str.upper():
                     parts = [p.strip() for p in val_str.split("|")]
                     if len(parts) == 2:
-                        part0_upper = parts[0].upper()
-                        part1_upper = parts[1].upper()
-                        
-                        if part1_upper.startswith("SL"):
-                            base_seg, sl_code = parts[0], part1_upper
-                        elif part0_upper.startswith("SL"):
-                            sl_code, base_seg = part0_upper, parts[1]
-                        else:
-                            continue
+                        part0, part1 = parts[0].upper(), parts[1].upper()
+                        if part1.startswith("SL"):
+                            base_seg, sl_code = parts[0], part1
+                        elif part0.startswith("SL"):
+                            sl_code, base_seg = part0, parts[1]
+                        else: continue
                             
-                        sl_code = sl_code.replace(" ", "")
-                        if sl_code not in sl_to_segment:
-                            sl_to_segment[sl_code] = []
-                            
-                        # Adiciona a versão completa da string (ex: "V1_Test | SL1")
-                        if val_str not in sl_to_segment[sl_code]:
-                            sl_to_segment[sl_code].append(val_str)
-                            
-                        # Adiciona a versão curta do código (ex: "V1_Test")
-                        if base_seg and base_seg not in sl_to_segment[sl_code]:
-                            sl_to_segment[sl_code].append(base_seg)
+                        sl_code = sl_code.replace(" ", "").replace("_", "")
+                        if sl_code not in sl_to_segment: sl_to_segment[sl_code] = []
+                        if val_str not in sl_to_segment[sl_code]: sl_to_segment[sl_code].append(val_str)
+                        if base_seg and base_seg not in sl_to_segment[sl_code]: sl_to_segment[sl_code].append(base_seg)
 
-        # 2. EXTRAÇÃO DOS TEXTOS DOS ASSUNTOS ("First name present" e "No first name")
+            # Padrão 2: SLs & PHs tab (V1_HOT \n V2_HOT_TEST -> SL_1)
+            col0 = str(row_vals[0]).strip() if len(row_vals) > 0 and pd.notna(row_vals[0]) else ""
+            col1 = str(row_vals[1]).strip() if len(row_vals) > 1 and pd.notna(row_vals[1]) else ""
+            
+            if col0 and "V" in col0.upper() and ("HOT" in col0.upper() or "TEST" in col0.upper() or "WARM" in col0.upper()):
+                segments = [s.strip() for s in str(col0).split("\n") if s.strip()]
+                if col1.upper().startswith("SL"):
+                    sl_match = re.search(r'^(SL[\s_]?\d+)', col1, re.IGNORECASE)
+                    if sl_match:
+                        sl_code = sl_match.group(1).upper().replace(" ", "").replace("_", "")
+                        if sl_code not in sl_to_segment: sl_to_segment[sl_code] = []
+                        for seg in segments:
+                            if seg not in sl_to_segment[sl_code]: sl_to_segment[sl_code].append(seg)
+
+        # Padrão 3: Copy Deck (Headers como V1_Default, e SL1 na coluna Module_segment)
+        for col_i in range(len(df.columns)):
+            header_val = str(df.iloc[0, col_i]).strip()
+            if header_val.upper().startswith("V") and "_" in header_val:
+                for row_i in range(1, min(20, len(df))): # Procura nas primeiras 20 linhas abaixo
+                    for check_col in range(max(0, col_i-3), col_i): # Procura SL na coluna de 'Module_segment'
+                        cell_val = str(df.iloc[row_i, check_col]).strip()
+                        if cell_val.upper().startswith("SL"):
+                            sl_code = cell_val.upper().replace(" ", "").replace("_", "")
+                            if sl_code not in sl_to_segment: sl_to_segment[sl_code] = []
+                            if header_val not in sl_to_segment[sl_code]: sl_to_segment[sl_code].append(header_val)
+
+        # 2. MOTOR DE EXTRAÇÃO DE TEXTO
         for idx, row in df.iterrows():
             for i, val in enumerate(row.values):
                 if pd.notna(val):
                     val_str = str(val).strip()
-                    match = re.search(r'^(SL\d+)\s*\((.*?)\)', val_str, re.IGNORECASE)
-                    if match:
-                        sl_code = match.group(1).upper()
-                        cond_type = match.group(2).lower()
-                        
-                        subject_text = ""
+                    
+                    # Tenta ler "SL1 (First name present)" (URL Matrix)
+                    match_url_matrix = re.search(r'^(SL\d+)\s*\((.*?)\)', val_str, re.IGNORECASE)
+                    
+                    # Tenta ler "SL_1: [Name] get up to..." (SLs & PHs)
+                    match_sls = re.search(r'^(SL[\s_]?\d+)[^\w](.*)', val_str, re.IGNORECASE | re.DOTALL)
+                    
+                    # Tenta ler célula "SL1" e texto na célula seguinte (Copy Deck)
+                    match_copy_deck = (val_str.upper().startswith("SL") and len(val_str) <= 4)
+                    
+                    sl_code = None
+                    subject_text = ""
+                    cond_type = ""
+
+                    if match_url_matrix:
+                        sl_code = match_url_matrix.group(1).upper().replace("_", "")
+                        cond_type = match_url_matrix.group(2).lower()
                         if i + 1 < len(row.values) and pd.notna(row.values[i+1]):
                             subject_text = str(row.values[i+1]).strip()
                             
-                        if subject_text and subject_text.lower() != "nan":
-                            if sl_code not in subjects_data:
-                                subjects_data[sl_code] = {"segments": sl_to_segment.get(sl_code, []), "first_name": "", "no_first_name": ""}
-                            
-                            if "no first name" in cond_type:
-                                subjects_data[sl_code]["no_first_name"] = subject_text
-                            elif "first name present" in cond_type:
-                                subjects_data[sl_code]["first_name"] = subject_text
+                    elif match_sls and "Versions" in str(df.iloc[0,0]): 
+                        sl_code = match_sls.group(1).upper().replace(" ", "").replace("_", "")
+                        subject_text = match_sls.group(2).strip()
+                        cond_type = "first name present" if "[name]" in subject_text.lower() else "no first name"
+                        
+                    elif match_copy_deck:
+                        sl_code = val_str.upper().replace("_", "")
+                        if i + 1 < len(row.values) and pd.notna(row.values[i+1]):
+                            subject_text = str(row.values[i+1]).strip()
+                        cond_type = "first name present" if "[name]" in subject_text.lower() else "no first name"
+
+                    if sl_code and subject_text and subject_text.lower() != "nan":
+                        if sl_code not in subjects_data:
+                            subjects_data[sl_code] = {"segments": sl_to_segment.get(sl_code, []), "first_name": "", "no_first_name": ""}
+                        
+                        if "no first name" in cond_type:
+                            subjects_data[sl_code]["no_first_name"] = subject_text
+                        else:
+                            subjects_data[sl_code]["first_name"] = subject_text
+
+        # Limpa dados vazios
+        subjects_data = {k: v for k, v in subjects_data.items() if v["first_name"] or v["no_first_name"]}
 
         if not subjects_data:
-            return None, "No structure like 'SL1 (First name present)' or 'V1_Test | SL1' was found in the matrix."
+            return None, "Não foi possível encontrar Subject Lines compatíveis com os formatos da Samsung nesta aba."
 
-        # 3. GERAÇÃO DO CÓDIGO E4X (Focado no SegmentCode, englobando Test e Control)
+        # 3. GERAÇÃO DO CÓDIGO E4X (Focado no SegmentCode)
         code = "<%\n"
         code += "var nameProper = recipient.firstName ? recipient.firstName.charAt(0).toUpperCase() + recipient.firstName.substring(1).toLowerCase() : \"\";\n"
         code += "var subject = \"\";\n"
@@ -462,11 +508,9 @@ def generate_acc_subject_code(file_bytes, file_name):
         for sl_code, data in subjects_data.items():
             segments = data.get("segments", [])
             
-            # Se a matriz falhar no mapeamento, faz o fallback para garantir funcionamento
             if not segments:
-                segments = [sl_code]
+                segments = [sl_code] # Fallback de segurança
                 
-            # Aqui é onde a magia acontece: junta V1_Test, V1_Test | SL1, V2_Control, V2_Control | SL1
             condicoes = " || ".join([f"targetData.segmentCode == '{seg}'" for seg in segments])
             cond_prefix = "if" if is_first else "else if"
             is_first = False
@@ -476,12 +520,21 @@ def generate_acc_subject_code(file_bytes, file_name):
             text_fn = data.get("first_name", "").replace('"', '\\"')
             text_nofn = data.get("no_first_name", "").replace('"', '\\"')
             
+            # Se só existir a versão com [Name], usa-a para as duas limpando o nome na segunda
+            if text_fn and not text_nofn:
+                text_nofn = re.sub(r'\[Name\]\s*,?\s*', '', text_fn, flags=re.IGNORECASE).strip()
+                if text_nofn: text_nofn = text_nofn[0].upper() + text_nofn[1:]
+            
+            # Se só existir a versão sem nome, usa-a para as duas
+            if text_nofn and not text_fn:
+                text_fn = text_nofn
+                
             text_fn_clean = re.sub(r'\[Name\]\s*,?\s*', '', text_fn, flags=re.IGNORECASE).strip()
-            if text_fn_clean: text_fn_clean = text_fn_clean[0].upper() + text_fn_clean[1:]
+            if text_fn_clean: text_fn_clean = text_fn_clean[0].lower() + text_fn_clean[1:]
             
             code += f"    if (hasFirstName) {{\n      subject = nameProper + \", {text_fn_clean}\";\n    }} else {{\n      subject = \"{text_nofn}\";\n    }}\n  }}"
             
-            preview_data.append({"originalCode": " || ".join(segments), "text": data.get("no_first_name", data.get("first_name", ""))})
+            preview_data.append({"originalCode": " || ".join(segments), "text": data.get("first_name", data.get("no_first_name", ""))})
             
         code += "\n%>\n<%= subject %>\n<%\nif( subject == '' || subject == undefined ) {\n"
         code += "  var attemptedCode = targetData.segmentCode || \"UNKNOWN\";\n"
@@ -491,7 +544,6 @@ def generate_acc_subject_code(file_bytes, file_name):
 
     except Exception as e:
         return None, f"Error processing Excel: {e}"
-
 # =====================================================================
 # STREAMLIT INTERFACE - MAIN TABS
 # =====================================================================
