@@ -336,12 +336,6 @@ def process_data(df):
             sl_code2 = sl_parts[1] if len(sl_parts) > 1 else sl_code1
             sl_code2 = sl_code2.replace("(50%)", "").replace("50%:", "").replace("50%", "")
 
-            # --- LIMPEZA NUCLEAR --- (Destrói qualquer barra sobrevivente)
-            code1 = str(code1).replace("/", "").strip()
-            code2 = str(code2).replace("/", "").strip()
-            sl_code1 = str(sl_code1).replace("/", "").strip()
-            sl_code2 = str(sl_code2).replace("/", "").strip()
-
             records = [
                 {"WaterfallId": waterfall_id, "DAGSegmentName": dag_segment_name, "CellName": cell_name, "Split": 0.5, "SegmentCode": code1, "SlineCode": sl_code1},
                 {"WaterfallId": waterfall_id + 1, "DAGSegmentName": dag_segment_name, "CellName": f"{cell_name}-test", "Split": 0.5, "SegmentCode": code2, "SlineCode": sl_code2}
@@ -354,15 +348,10 @@ def process_data(df):
                     r["DAGSCount"] = dag_count
                     r["isABTest"] = "FALSE"
                 r.update({"extraColumnA": "", "extraColumnB": "", "extraColumnC": ""})
-                
-                # --- LIMPEZA FINAL DO SCRIPT ANTES DE SALVAR ---
-                r["SegmentCode"] = str(r["SegmentCode"]).replace("/", "").strip()
-                r["SlineCode"] = str(r["SlineCode"]).replace("/", "").strip()
-                
                 final_json_data.append(r)
         else:
-            code = segment_code.replace("(100%)", "").replace("100%:", "").replace("100%", "").strip()
-            sl_code = sline_code.replace("(100%)", "").replace("100%:", "").replace("100%", "").strip()
+            code = str(segment_code).replace("(100%)", "").replace("100%:", "").replace("100%", "").replace("/", "").strip()
+            sl_code = str(sline_code).replace("(100%)", "").replace("100%:", "").replace("100%", "").replace("/", "").strip()
             
             record = {"WaterfallId": waterfall_id, "DAGSegmentName": dag_segment_name, "CellName": cell_name, "Split": 1.0, "SegmentCode": code, "SlineCode": sl_code}
             waterfall_id += 1
@@ -372,27 +361,23 @@ def process_data(df):
                 record["DAGSCount"] = dag_count
                 record["isABTest"] = "FALSE"
             record.update({"extraColumnA": "", "extraColumnB": "", "extraColumnC": ""})
-            
-            # --- LIMPEZA FINAL DO SCRIPT ANTES DE SALVAR ---
-            record["SegmentCode"] = str(record["SegmentCode"]).replace("/", "").strip()
-            record["SlineCode"] = str(record["SlineCode"]).replace("/", "").strip()
-            
             final_json_data.append(record)
 
     return final_json_data
+
 # =====================================================================
 # FUNCTION: ACC SUBJECT GENERATOR (SAMSUNG URL MATRIX OPTIMIZED)
 # =====================================================================
 def generate_acc_subject_code(file_bytes, file_name):
     subjects_data = {}
+    sl_to_segment = {}
     
     if not file_name.endswith(('.xlsx', '.xls')):
-        return None, "Por favor, faça upload do ficheiro Excel (URL Matrix) da Samsung."
+        return None, "Please upload the Samsung Excel (URL Matrix) file."
 
     try:
         xls = pd.ExcelFile(io.BytesIO(file_bytes))
         sheet_to_use = None
-        # Procura a aba correta
         for s in xls.sheet_names:
             if 'url' in s.lower() or 'matrix' in s.lower():
                 sheet_to_use = s
@@ -401,41 +386,40 @@ def generate_acc_subject_code(file_bytes, file_name):
 
         df = pd.read_excel(xls, sheet_name=sheet_to_use, header=None)
         
-        # 1. MAPEAMENTO DE SEGMENT CODES PARA SL CODES (Linha 4 do seu print)
-        sl_to_segment = {}
+        # 1. MAPEAMENTO DE SEGMENT CODES E SL CODES (Ex: "V1_Test | SL1")
         for idx, row in df.iterrows():
-            row_str = " ".join([str(x).lower() for x in row.values if pd.notna(x)])
-            if "segment code / version name" in row_str:
-                # Procura nas linhas imediatamente a seguir pela estrutura "V1_Test | SL1"
-                for look_ahead in range(1, 4):
-                    if idx + look_ahead < len(df):
-                        for val in df.iloc[idx + look_ahead].values:
-                            if pd.notna(val):
-                                val_str = str(val).strip()
-                                if "|" in val_str:
-                                    parts = [p.strip() for p in val_str.split("|")]
-                                    if len(parts) == 2:
-                                        seg_code = parts[0]
-                                        sl_code = parts[1].upper().replace(" ", "")
-                                        if sl_code not in sl_to_segment:
-                                            sl_to_segment[sl_code] = []
-                                        if seg_code not in sl_to_segment[sl_code]:
-                                            sl_to_segment[sl_code].append(seg_code)
-                break # Pára de procurar o mapeamento depois de o encontrar
+            for val in row.dropna():
+                val_str = str(val).strip()
+                if "|" in val_str and "SL" in val_str.upper():
+                    parts = [p.strip() for p in val_str.split("|")]
+                    if len(parts) == 2:
+                        part0_upper = parts[0].upper()
+                        part1_upper = parts[1].upper()
+                        
+                        if part1_upper.startswith("SL"):
+                            seg_code, sl_code = parts[0], part1_upper
+                        elif part0_upper.startswith("SL"):
+                            sl_code, seg_code = part0_upper, parts[1]
+                        else:
+                            continue
+                            
+                        sl_code = sl_code.replace(" ", "")
+                        if sl_code not in sl_to_segment:
+                            sl_to_segment[sl_code] = []
+                        if seg_code not in sl_to_segment[sl_code]:
+                            sl_to_segment[sl_code].append(seg_code)
 
-        # 2. EXTRAÇÃO DOS TEXTOS DOS ASSUNTOS
+        # 2. EXTRAÇÃO DOS TEXTOS DOS ASSUNTOS ("First name present" e "No first name")
         for idx, row in df.iterrows():
             for i, val in enumerate(row.values):
                 if pd.notna(val):
                     val_str = str(val).strip()
-                    # Apanha "SL1 (First name present)" ou "SL1 (No first name)"
                     match = re.search(r'^(SL\d+)\s*\((.*?)\)', val_str, re.IGNORECASE)
                     if match:
                         sl_code = match.group(1).upper()
                         cond_type = match.group(2).lower()
                         
                         subject_text = ""
-                        # O texto do subject está geralmente na célula à direita (coluna B)
                         if i + 1 < len(row.values) and pd.notna(row.values[i+1]):
                             subject_text = str(row.values[i+1]).strip()
                             
@@ -445,11 +429,11 @@ def generate_acc_subject_code(file_bytes, file_name):
                             
                             if "no first name" in cond_type:
                                 subjects_data[sl_code]["no_first_name"] = subject_text
-                            else:
+                            elif "first name present" in cond_type:
                                 subjects_data[sl_code]["first_name"] = subject_text
 
         if not subjects_data:
-            return None, "Não foi possível encontrar a estrutura 'SL1 (First name present)' e o mapeamento 'V1_Test | SL1' na matriz."
+            return None, "No structure like 'SL1 (First name present)' or 'V1_Test | SL1' was found in the matrix."
 
         # 3. GERAÇÃO DO CÓDIGO E4X (Focado no SegmentCode)
         code = "<%\n"
@@ -457,36 +441,30 @@ def generate_acc_subject_code(file_bytes, file_name):
         code += "var subject = \"\";\n"
         code += "var hasFirstName = recipient.firstName && recipient.firstName !== '' && recipient.firstName !== 'NONAME';\n"
         
-        # Cria a tabela de preview visual
         preview_data = []
-        
         is_first = True
+        
         for sl_code, data in subjects_data.items():
-            segments = data["segments"]
+            segments = data.get("segments", [])
             
-            # Se não houver segmentos mapeados, ignoramos para não quebrar a lógica
+            # Se a planilha não mapear o SegmentCode à linha do SL, faz fallback pelo SL Code
             if not segments:
-                segments = [sl_code] # Fallback caso não encontre o mapeamento
+                segments = [sl_code]
                 
-            # Formata a condição if com todos os segmentos associados a este SL
             condicoes = " || ".join([f"targetData.segmentCode == '{seg}'" for seg in segments])
-            
             cond_prefix = "if" if is_first else "else if"
             is_first = False
             
             code += f"\n  {cond_prefix} ({condicoes}) {{\n"
             
-            text_fn = data["first_name"].replace('"', '\\"')
-            text_nofn = data["no_first_name"].replace('"', '\\"')
+            text_fn = data.get("first_name", "").replace('"', '\\"')
+            text_nofn = data.get("no_first_name", "").replace('"', '\\"')
             
-            # Limpa o [Name] do texto para não duplicar, pois já inserimos via código
             text_fn_clean = re.sub(r'\[Name\]\s*,?\s*', '', text_fn, flags=re.IGNORECASE).strip()
-            # Garante a primeira letra maiúscula se a remoção do nome deixar minúscula
             if text_fn_clean: text_fn_clean = text_fn_clean[0].upper() + text_fn_clean[1:]
             
             code += f"    if (hasFirstName) {{\n      subject = nameProper + \", {text_fn_clean}\";\n    }} else {{\n      subject = \"{text_nofn}\";\n    }}\n  }}"
             
-            # Adiciona para a tabela visual no Streamlit
             preview_data.append({"originalCode": " | ".join(segments), "text": data.get("no_first_name", data.get("first_name", ""))})
             
         code += "\n%>\n<%= subject %>\n<%\nif( subject == '' || subject == undefined ) {\n"
@@ -622,7 +600,6 @@ with tab1:
                 # --- TARGETING RULES ---
                 st.markdown("<br><h3>🛑 Targeting Rules</h3>", unsafe_allow_html=True)
                 
-                # Displays the Audience in a wide highlighted box
                 if meta.get("audience"):
                     st.info("**👥 AUDIENCE SELECTION:**\n" + "\n".join([f"- {item}" for item in meta["audience"]]))
                 
@@ -644,6 +621,7 @@ with tab1:
                     else:
                         st.write("None")
 
+                # Remove _Source from final output
                 for obj in json_objects:
                     obj.pop("_Source", None)
                     # Limpeza Final Extrema de Barras
@@ -653,7 +631,6 @@ with tab1:
                         obj["SlineCode"] = str(obj["SlineCode"]).replace("/", "").strip()
                     
                 json_string = json.dumps(json_objects, indent=2)
-                
                 compressed_data = zlib.compress(json_string.encode('utf-8'))
                 encoded_data = base64.urlsafe_b64encode(compressed_data).decode('utf-8')
                 shareable_link = f"https://upgraded-guide-bxpthdptstyfwaor2naznv.streamlit.app?data={encoded_data}"
@@ -682,7 +659,6 @@ with tab2:
     with st.container(border=True):
         st.markdown("#### 🔌 1. Jira Connection")
         
-        # Secure variables
         try:
             JIRA_EMAIL = st.secrets["JIRA_EMAIL"]
             JIRA_TOKEN = st.secrets["JIRA_TOKEN"]
@@ -732,7 +708,6 @@ with tab2:
                             data_deploy = f"{dia.zfill(2)}/{mes.zfill(2)}/{ano_atual}"
                         else: data_deploy = datetime.datetime.now().strftime("%m/%d/%Y")
                         
-                        ## --- Capture the main ticket owner as fallback ---
                         assignee_main = campos.get("assignee")
                         qa_reviewer_name = assignee_main.get("displayName", "N/A") if assignee_main else "N/A"
                         
@@ -741,7 +716,6 @@ with tab2:
                         
                         for sub in subtasks:
                             sub_key = sub.get("key")
-                            # Extracts the full sub-task via API
                             url_sub = f"{JIRA_URL}/rest/api/2/issue/{sub_key}"
                             resp_sub = requests.get(url_sub, headers=headers, auth=auth)
                             
@@ -749,7 +723,6 @@ with tab2:
                                 sub_data = resp_sub.json()
                                 sub_fields = sub_data.get("fields", {})
                                 
-                                # 1. Segments Extraction
                                 comentarios = sub_fields.get("comment", {}).get("comments", [])
                                 for comment in comentarios:
                                     linhas = comment.get("body", "").split('\n')
@@ -759,11 +732,10 @@ with tab2:
                                             seg = match.group(1).strip().upper()
                                             if seg: segmentos_encontrados.add(re.sub(r'_V\d+$', '', seg))
                                             
-                                # 2. Looks for Specific Assignee ONLY for QA (Ignores HTML Proof)
                                 sub_summary = sub_fields.get("summary", "").upper()
                                 if "1A QA" in sub_summary or "QA REVIEW" in sub_summary:
                                     sub_assignee = sub_fields.get("assignee")
-                                    if sub_assignee: # Only replaces if someone is assigned to 1A
+                                    if sub_assignee:
                                         qa_reviewer_name = sub_assignee.get("displayName", qa_reviewer_name)
                         
                         st.session_state['jira_dados'] = {
@@ -781,7 +753,6 @@ with tab2:
         jd = st.session_state['jira_dados']
         
         st.markdown("<br><h4>✏️ 2. Job Fine-Tuning</h4>", unsafe_allow_html=True)
-        # NEW: 3 columns to accommodate the Reviewer
         colA, colB, colC = st.columns(3)
         with colA: jd['status'] = st.text_input("Ticket Status:", jd.get('status', ''))
         with colB: jd['data_deploy'] = st.text_input("Deployment Date:", jd.get('data_deploy', ''))
@@ -800,7 +771,6 @@ with tab2:
             lob = jd['lob']
             segmentos = jd.get('segmentos_ativos', ["N_A"]) if jd.get('segmentos_ativos') else ["N_A"]
             data_deploy = jd.get('data_deploy', datetime.datetime.now().strftime("%m/%d/%Y"))
-            # NEW: Pulls dynamic reviewer
             reviewer = jd.get('reviewer', 'N/A')
             
             zip_buffer = io.BytesIO()
@@ -857,7 +827,6 @@ with tab2:
                                 except: pass
                             
                         ws_target.title = nome_aba
-                        # NEW: Clean Excel injection
                         ws_target["F2"] = f"{job_id}"; ws_target["F3"] = f"{seg_name}"; ws_target["F4"] = reviewer; ws_target["F6"] = datetime.datetime.now().strftime("%m/%d/%Y")
                     
                     rev_stream = io.BytesIO(); wb_rev.save(rev_stream)
@@ -893,7 +862,6 @@ with tab2:
                                 except: pass
                             
                         ws_target.title = nome_aba
-                        # NEW: Clean Excel injection
                         ws_target["D1"] = f"Reviewed by: {reviewer}"; ws_target["D2"] = f"LOB:{lob}"; ws_target["D3"] = f"JIRA Ticket: {job_id}"
                         ws_target["D4"] = f"Segment: {seg_name}"; ws_target["D5"] = data_deploy
                         
@@ -928,7 +896,7 @@ with tab3:
             with col1:
                 st.markdown("#### 👀 Discovered Subjects")
                 df_preview = pd.DataFrame(parsed_data)[["originalCode", "text"]]
-                df_preview.columns = ["SL Code", "Extracted Subject Text"]
+                df_preview.columns = ["Segment Code", "Extracted Subject Text"]
                 st.dataframe(df_preview, use_container_width=True, hide_index=True)
             
             with col2:
