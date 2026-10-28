@@ -395,15 +395,26 @@ def generate_acc_subject_code(file_bytes, file_name):
 
         df = pd.read_excel(xls, sheet_name=sheet_to_use, header=None)
 
-        # 1. MOTOR DE EXTRAÇÃO DE TEXTO
+        # 1. MOTOR DE EXTRAÇÃO DE TEXTO (Avançado e sem dependência de cabeçalhos)
         for idx, row in df.iterrows():
             for i, val in enumerate(row.values):
                 if pd.notna(val):
                     val_str = str(val).strip()
                     
+                    # Padrão 1: "SL1 (First name present)" (URL Matrix)
                     match_url_matrix = re.search(r'^(SL\d+)\s*\((.*?)\)', val_str, re.IGNORECASE)
-                    match_sls = re.search(r'^(SL[\s_]?\d+)[^\w](.*)', val_str, re.IGNORECASE | re.DOTALL)
-                    match_copy_deck = bool(re.match(r'^SL[\s_]?\d+$', val_str, re.IGNORECASE))
+                    
+                    # Padrão 2: "SL_1: \n [Name] get up to..." (SLs & PHs - Tudo na mesma célula)
+                    match_sls = None
+                    if "\n" in val_str or ":" in val_str:
+                        m = re.search(r'^(SL[\s_]?\d+)[\s\:\-]+(.*)', val_str, re.IGNORECASE | re.DOTALL)
+                        if m and m.group(2).strip():
+                            match_sls = m
+                            
+                    # Padrão 3: Célula diz apenas "SL1", texto está à direita (Copy Deck)
+                    match_copy_deck = False
+                    if not match_sls and not match_url_matrix:
+                        match_copy_deck = bool(re.match(r'^SL[\s_]?\d+$', val_str, re.IGNORECASE))
                     
                     sl_code = None
                     subject_text = ""
@@ -415,15 +426,18 @@ def generate_acc_subject_code(file_bytes, file_name):
                         if i + 1 < len(row.values) and pd.notna(row.values[i+1]):
                             subject_text = str(row.values[i+1]).strip()
                             
-                    elif match_sls and "Versions" in str(df.iloc[0,0]): 
+                    elif match_sls: 
                         sl_code = match_sls.group(1).upper().replace(" ", "").replace("_", "")
                         subject_text = match_sls.group(2).strip()
                         cond_type = "first name present" if "[name]" in subject_text.lower() else "no first name"
                         
                     elif match_copy_deck:
                         sl_code = val_str.upper().replace("_", "")
-                        if i + 1 < len(row.values) and pd.notna(row.values[i+1]):
-                            subject_text = str(row.values[i+1]).strip()
+                        # Procura o texto na célula seguinte (ou na próxima não-vazia à direita)
+                        for j in range(i+1, min(i+3, len(row.values))):
+                            if pd.notna(row.values[j]) and str(row.values[j]).strip():
+                                subject_text = str(row.values[j]).strip()
+                                break
                         cond_type = "first name present" if "[name]" in subject_text.lower() else "no first name"
 
                     if sl_code and subject_text and subject_text.lower() != "nan":
@@ -435,10 +449,11 @@ def generate_acc_subject_code(file_bytes, file_name):
                         else:
                             subjects_data[sl_code]["first_name"] = subject_text
 
+        # Limpa dados vazios
         subjects_data = {k: v for k, v in subjects_data.items() if v["first_name"] or v["no_first_name"]}
 
         if not subjects_data:
-            return None, "Não foi possível extrair Subject Lines nesta aba."
+            return None, "Não foi possível extrair Subject Lines nesta aba. Verifique o formato."
 
         # 2. GERAÇÃO DO CÓDIGO E4X
         code = "<%\n"
@@ -463,7 +478,6 @@ def generate_acc_subject_code(file_bytes, file_name):
             
             code += f"\n      {cond_prefix} (targetData.slineCode == '{sl_code}') {{\n"
             
-            # --- NOVO: Remove quebras de linha e espaços duplos do Excel ---
             text_fn = " ".join(data.get("first_name", "").split())
             text_nofn = " ".join(data.get("no_first_name", "").split())
             
