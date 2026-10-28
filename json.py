@@ -395,7 +395,7 @@ def generate_acc_subject_code(file_bytes, file_name):
 
         df = pd.read_excel(xls, sheet_name=sheet_to_use, header=None)
 
-        # 1. MOTOR DE EXTRAÇÃO DE TEXTO (Avançado e sem dependência de cabeçalhos)
+        # 1. MOTOR DE EXTRAÇÃO DE TEXTO (Leitura Horizontal e Vertical)
         for idx, row in df.iterrows():
             for i, val in enumerate(row.values):
                 if pd.notna(val):
@@ -404,21 +404,22 @@ def generate_acc_subject_code(file_bytes, file_name):
                     # Padrão 1: "SL1 (First name present)" (URL Matrix)
                     match_url_matrix = re.search(r'^\s*(SL\d+)\s*\((.*?)\)', val_str, re.IGNORECASE)
                     
-                    # Padrão 2: "SL_1: \n [Name] get up to..." (SLs & PHs - Tudo na mesma célula)
+                    # Padrão 2: "SL_1: \n [Name] get up to..." (Tudo na mesma célula com quebra de linha)
                     match_sls = None
-                    if "\n" in val_str or ":" in val_str:
+                    if "\n" in val_str or (":" in val_str and len(val_str) > 10):
                         m = re.search(r'^\s*(SL[\s_]?\d+)[\s\:\-]+(.*)', val_str, re.IGNORECASE | re.DOTALL)
                         if m and m.group(2).strip():
                             match_sls = m
                             
-                    # Padrão 3: Célula diz apenas "SL1", texto está à direita (Copy Deck)
-                    match_copy_deck = False
+                    # Padrão 3 e 4: Célula isolada "SL1" ou "SL_1:"
+                    match_standalone = None
                     if not match_sls and not match_url_matrix:
-                        match_copy_deck = bool(re.match(r'^\s*SL[\s_]?\d+\s*$', val_str, re.IGNORECASE))
+                        m_stand = re.match(r'^\s*(SL[\s_]?\d+)[\s\:]*$', val_str, re.IGNORECASE)
+                        if m_stand:
+                            match_standalone = m_stand
                     
                     sl_code = None
                     subject_text = ""
-                    cond_type = ""
 
                     if match_url_matrix:
                         sl_code = match_url_matrix.group(1).upper().replace("_", "")
@@ -426,21 +427,27 @@ def generate_acc_subject_code(file_bytes, file_name):
                         if i + 1 < len(row.values) and pd.notna(row.values[i+1]):
                             subject_text = str(row.values[i+1]).strip()
                             
-                    elif match_sls: # CONDIÇÃO "Versions" REMOVIDA PARA NÃO QUEBRAR
+                    elif match_sls: 
                         sl_code = match_sls.group(1).upper().replace(" ", "").replace("_", "")
                         subject_text = match_sls.group(2).strip()
-                        cond_type = "first name present" if "[name]" in subject_text.lower() else "no first name"
                         
-                    elif match_copy_deck:
-                        sl_code = val_str.upper().replace("_", "")
-                        # Procura o texto na célula seguinte (ou na próxima não-vazia à direita)
-                        for j in range(i+1, min(i+3, len(row.values))):
-                            if pd.notna(row.values[j]) and str(row.values[j]).strip():
-                                subject_text = str(row.values[j]).strip()
-                                break
-                        cond_type = "first name present" if "[name]" in subject_text.lower() else "no first name"
+                    elif match_standalone:
+                        sl_code = match_standalone.group(1).upper().replace(" ", "").replace("_", "")
+                        
+                        if ":" in val_str:
+                            # Padrão 4: Vertical - O texto está na linha abaixo (SLs & PHs)
+                            if idx + 1 < len(df) and pd.notna(df.iloc[idx+1, i]):
+                                subject_text = str(df.iloc[idx+1, i]).strip()
+                        else:
+                            # Padrão 3: Horizontal - O texto está nas células à direita (Copy Deck)
+                            for j in range(i+1, min(i+3, len(row.values))):
+                                if pd.notna(row.values[j]) and str(row.values[j]).strip():
+                                    subject_text = str(row.values[j]).strip()
+                                    break
 
                     if sl_code and subject_text and subject_text.lower() != "nan":
+                        cond_type = "first name present" if "[name]" in subject_text.lower() else "no first name"
+                        
                         if sl_code not in subjects_data:
                             subjects_data[sl_code] = {"first_name": "", "no_first_name": ""}
                         
@@ -453,7 +460,7 @@ def generate_acc_subject_code(file_bytes, file_name):
         subjects_data = {k: v for k, v in subjects_data.items() if v["first_name"] or v["no_first_name"]}
 
         if not subjects_data:
-            return None, "Não foi possível extrair Subject Lines nesta aba."
+            return None, "Não foi possível extrair Subject Lines nesta aba. Verifique a formatação do ficheiro."
 
         # 2. GERAÇÃO DO CÓDIGO E4X
         code = "<%\n"
@@ -481,13 +488,11 @@ def generate_acc_subject_code(file_bytes, file_name):
             text_fn = " ".join(data.get("first_name", "").split())
             text_nofn = " ".join(data.get("no_first_name", "").split())
             
-            # CENÁRIO 1: Matriz não pede nome (texto estático)
             if not text_fn and text_nofn:
                 text_nofn_clean = text_nofn.replace('"', '\\"')
                 code += f"        if (hasFirstName) {{\n          subject = \"{text_nofn_clean}\";\n        }} else {{\n          subject = \"{text_nofn_clean}\";\n        }}\n      }}"
                 preview_data.append({"originalCode": sl_code, "text": text_nofn})
                 
-            # CENÁRIO 2: Matriz pede nome, mas só forneceu uma frase
             elif text_fn and not text_nofn:
                 text_nofn = re.sub(r'\[Name\]\s*,?\s*', '', text_fn, flags=re.IGNORECASE).strip()
                 if text_nofn: text_nofn = text_nofn[0].upper() + text_nofn[1:]
@@ -498,7 +503,6 @@ def generate_acc_subject_code(file_bytes, file_name):
                 code += f"        if (hasFirstName) {{\n          subject = \"\" + nameProper + \", {text_fn_clean.replace('\"', '\\\"')}\";\n        }} else {{\n          subject = \"{text_nofn.replace('\"', '\\\"')}\";\n        }}\n      }}"
                 preview_data.append({"originalCode": sl_code, "text": text_fn})
                 
-            # CENÁRIO 3: A matriz tem as duas versões explícitas
             else:
                 text_fn_clean = re.sub(r'\[Name\]\s*,?\s*', '', text_fn, flags=re.IGNORECASE).strip()
                 if text_fn.lower().strip().startswith("[name]"):
