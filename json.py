@@ -401,13 +401,8 @@ def generate_acc_subject_code(file_bytes, file_name):
                 if pd.notna(val):
                     val_str = str(val).strip()
                     
-                    # Padrão 1: "SL1 (First name present)" (URL Matrix)
                     match_url_matrix = re.search(r'^(SL\d+)\s*\((.*?)\)', val_str, re.IGNORECASE)
-                    
-                    # Padrão 2: "SL_1: [Name] get up to..." (SLs & PHs)
                     match_sls = re.search(r'^(SL[\s_]?\d+)[^\w](.*)', val_str, re.IGNORECASE | re.DOTALL)
-                    
-                    # Padrão 3: Célula diz apenas "SL1", "SL2" (Expressão Regular rigorosa que ignora "SL/PH")
                     match_copy_deck = bool(re.match(r'^SL[\s_]?\d+$', val_str, re.IGNORECASE))
                     
                     sl_code = None
@@ -431,7 +426,6 @@ def generate_acc_subject_code(file_bytes, file_name):
                             subject_text = str(row.values[i+1]).strip()
                         cond_type = "first name present" if "[name]" in subject_text.lower() else "no first name"
 
-                    # Guarda no dicionário se encontrou texto válido
                     if sl_code and subject_text and subject_text.lower() != "nan":
                         if sl_code not in subjects_data:
                             subjects_data[sl_code] = {"first_name": "", "no_first_name": ""}
@@ -456,7 +450,6 @@ def generate_acc_subject_code(file_bytes, file_name):
         preview_data = []
         is_first = True
         
-        # Ordena os SL codes numericamente
         def extract_num(sl):
             nums = re.findall(r'\d+', sl)
             return int(nums[0]) if nums else 0
@@ -477,7 +470,7 @@ def generate_acc_subject_code(file_bytes, file_name):
             # CENÁRIO 1: Matriz não pede nome (texto estático)
             if not text_fn and text_nofn:
                 text_nofn_clean = text_nofn.replace('"', '\\"')
-                code += f"        subject = \"{text_nofn_clean}\";\n      }}"
+                code += f"        if (hasFirstName) {{\n          subject = \"{text_nofn_clean}\";\n        }} else {{\n          subject = \"{text_nofn_clean}\";\n        }}\n      }}"
                 preview_data.append({"originalCode": sl_code, "text": text_nofn})
                 
             # CENÁRIO 2: Matriz pede nome, gera a versão com e sem nome automaticamente
@@ -488,16 +481,16 @@ def generate_acc_subject_code(file_bytes, file_name):
                 text_fn_clean = re.sub(r'\[Name\]\s*,?\s*', '', text_fn, flags=re.IGNORECASE).strip()
                 if text_fn_clean: text_fn_clean = text_fn_clean[0].lower() + text_fn_clean[1:]
                 
-                # ADICIONADO: "" + nameProper +
                 code += f"        if (hasFirstName) {{\n          subject = \"\" + nameProper + \", {text_fn_clean.replace('\"', '\\\"')}\";\n        }} else {{\n          subject = \"{text_nofn.replace('\"', '\\\"')}\";\n        }}\n      }}"
                 preview_data.append({"originalCode": sl_code, "text": text_fn})
                 
             # CENÁRIO 3: A matriz tem as duas versões explícitas
             else:
                 text_fn_clean = re.sub(r'\[Name\]\s*,?\s*', '', text_fn, flags=re.IGNORECASE).strip()
-                if text_fn_clean: text_fn_clean = text_fn_clean[0].lower() + text_fn_clean[1:]
+                # Apenas converte para minúscula se a frase original começou com [Name]
+                if text_fn.lower().strip().startswith("[name]"):
+                    if text_fn_clean: text_fn_clean = text_fn_clean[0].lower() + text_fn_clean[1:]
                 
-                # ADICIONADO: "" + nameProper +
                 code += f"        if (hasFirstName) {{\n          subject = \"\" + nameProper + \", {text_fn_clean.replace('\"', '\\\"')}\";\n        }} else {{\n          subject = \"{text_nofn.replace('\"', '\\\"')}\";\n        }}\n      }}"
                 preview_data.append({"originalCode": sl_code, "text": f"{text_fn}"})
             
