@@ -379,143 +379,157 @@ def process_data(df):
 def generate_acc_subject_code(file_bytes, file_name):
     subjects_data = {}
     
-    if not file_name.endswith(('.xlsx', '.xls')):
-        return None, "Please upload the Samsung Excel file."
-
-    try:
-        xls = pd.ExcelFile(io.BytesIO(file_bytes))
-        sheet_to_use = None
-        
-        for s in xls.sheet_names:
-            s_lower = s.lower()
-            if 'url' in s_lower or 'matrix' in s_lower or 'copy' in s_lower or 'sl' in s_lower:
-                sheet_to_use = s
-                break
-        if not sheet_to_use: sheet_to_use = xls.sheet_names[0]
-
-        df = pd.read_excel(xls, sheet_name=sheet_to_use, header=None)
-
-        # 1. MOTOR DE EXTRAÇÃO DE TEXTO (Leitura Horizontal e Vertical)
-        for idx, row in df.iterrows():
-            for i, val in enumerate(row.values):
-                if pd.notna(val):
-                    val_str = str(val).strip()
-                    
-                    # Padrão 1: "SL1 (First name present)" (URL Matrix)
-                    match_url_matrix = re.search(r'^\s*(SL\d+)\s*\((.*?)\)', val_str, re.IGNORECASE)
-                    
-                    # Padrão 2: "SL_1: \n [Name] get up to..." (Tudo na mesma célula com quebra de linha)
-                    match_sls = None
-                    if "\n" in val_str or (":" in val_str and len(val_str) > 10):
-                        m = re.search(r'^\s*(SL[\s_]?\d+)[\s\:\-]+(.*)', val_str, re.IGNORECASE | re.DOTALL)
-                        if m and m.group(2).strip():
-                            match_sls = m
-                            
-                    # Padrão 3 e 4: Célula isolada "SL1" ou "SL_1:"
-                    match_standalone = None
-                    if not match_sls and not match_url_matrix:
-                        m_stand = re.match(r'^\s*(SL[\s_]?\d+)[\s\:]*$', val_str, re.IGNORECASE)
-                        if m_stand:
-                            match_standalone = m_stand
-                    
-                    sl_code = None
-                    subject_text = ""
-
-                    if match_url_matrix:
-                        sl_code = match_url_matrix.group(1).upper().replace("_", "")
-                        cond_type = match_url_matrix.group(2).lower()
-                        if i + 1 < len(row.values) and pd.notna(row.values[i+1]):
-                            subject_text = str(row.values[i+1]).strip()
-                            
-                    elif match_sls: 
-                        sl_code = match_sls.group(1).upper().replace(" ", "").replace("_", "")
-                        subject_text = match_sls.group(2).strip()
-                        
-                    elif match_standalone:
-                        sl_code = match_standalone.group(1).upper().replace(" ", "").replace("_", "")
-                        
-                        if ":" in val_str:
-                            # Padrão 4: Vertical - O texto está na linha abaixo (SLs & PHs)
-                            if idx + 1 < len(df) and pd.notna(df.iloc[idx+1, i]):
-                                subject_text = str(df.iloc[idx+1, i]).strip()
-                        else:
-                            # Padrão 3: Horizontal - O texto está nas células à direita (Copy Deck)
-                            for j in range(i+1, min(i+3, len(row.values))):
-                                if pd.notna(row.values[j]) and str(row.values[j]).strip():
-                                    subject_text = str(row.values[j]).strip()
-                                    break
-
-                    if sl_code and subject_text and subject_text.lower() != "nan":
-                        cond_type = "first name present" if "[name]" in subject_text.lower() else "no first name"
-                        
-                        if sl_code not in subjects_data:
-                            subjects_data[sl_code] = {"first_name": "", "no_first_name": ""}
-                        
-                        if "no first name" in cond_type:
-                            subjects_data[sl_code]["no_first_name"] = subject_text
-                        else:
-                            subjects_data[sl_code]["first_name"] = subject_text
-
-        # Limpa dados vazios
-        subjects_data = {k: v for k, v in subjects_data.items() if v["first_name"] or v["no_first_name"]}
-
-        if not subjects_data:
-            return None, "Não foi possível extrair Subject Lines nesta aba. Verifique a formatação do ficheiro."
-
-        # 2. GERAÇÃO DO CÓDIGO E4X
-        code = "<%\n"
-        code += "    var nameProper = recipient.firstName ? recipient.firstName.charAt(0).toUpperCase() + recipient.firstName.substring(1).toLowerCase() : \"\";\n"
-        code += "    var subject = \"\";\n"
-        code += "    var hasFirstName = recipient.firstName && recipient.firstName !== '' && recipient.firstName !== 'NONAME';\n"
-        
-        preview_data = []
-        is_first = True
-        
-        def extract_num(sl):
-            nums = re.findall(r'\d+', sl)
-            return int(nums[0]) if nums else 0
+    if file_name.endswith(('.xlsx', '.xls')):
+        try:
+            xls = pd.ExcelFile(io.BytesIO(file_bytes))
             
-        sorted_sls = sorted(subjects_data.keys(), key=extract_num)
-        
-        for sl_code in sorted_sls:
-            data = subjects_data[sl_code]
-            
-            cond_prefix = "if" if is_first else "else if"
-            is_first = False
-            
-            code += f"\n      {cond_prefix} (targetData.slineCode == '{sl_code}') {{\n"
-            
-            text_fn = " ".join(data.get("first_name", "").split())
-            text_nofn = " ".join(data.get("no_first_name", "").split())
-            
-            if not text_fn and text_nofn:
-                text_nofn_clean = text_nofn.replace('"', '\\"')
-                code += f"        if (hasFirstName) {{\n          subject = \"{text_nofn_clean}\";\n        }} else {{\n          subject = \"{text_nofn_clean}\";\n        }}\n      }}"
-                preview_data.append({"originalCode": sl_code, "text": text_nofn})
+            # 1. MOTOR DE EXTRAÇÃO DE TEXTO (Varre TODAS as abas automaticamente)
+            for sheet in xls.sheet_names:
+                df = pd.read_excel(xls, sheet_name=sheet, header=None)
+                temp_subjects = {}
                 
-            elif text_fn and not text_nofn:
-                text_nofn = re.sub(r'\[Name\]\s*,?\s*', '', text_fn, flags=re.IGNORECASE).strip()
-                if text_nofn: text_nofn = text_nofn[0].upper() + text_nofn[1:]
+                for idx, row in df.iterrows():
+                    for i, val in enumerate(row.values):
+                        if pd.notna(val):
+                            val_str = str(val).strip()
+                            
+                            match_url_matrix = re.search(r'^\s*(SL\d+)\s*\((.*?)\)', val_str, re.IGNORECASE)
+                            
+                            match_sls = None
+                            if "\n" in val_str or ":" in val_str:
+                                m = re.search(r'^\s*(SL[\s_]?\d+)[\s\:\-]+(.*)', val_str, re.IGNORECASE | re.DOTALL)
+                                if m and m.group(2).strip():
+                                    match_sls = m
+                                    
+                            match_standalone = None
+                            if not match_sls and not match_url_matrix:
+                                m_stand = re.match(r'^\s*(SL[\s_]?\d+)[\s\:]*$', val_str, re.IGNORECASE)
+                                if m_stand:
+                                    match_standalone = m_stand
+                            
+                            sl_code = None
+                            subject_text = ""
+
+                            if match_url_matrix:
+                                sl_code = match_url_matrix.group(1).upper().replace("_", "")
+                                cond_type = match_url_matrix.group(2).lower()
+                                if i + 1 < len(row.values) and pd.notna(row.values[i+1]):
+                                    subject_text = str(row.values[i+1]).strip()
+                                    
+                            elif match_sls: 
+                                sl_code = match_sls.group(1).upper().replace(" ", "").replace("_", "")
+                                subject_text = match_sls.group(2).strip()
+                                
+                            elif match_standalone:
+                                sl_code = match_standalone.group(1).upper().replace(" ", "").replace("_", "")
+                                
+                                if ":" in val_str:
+                                    if idx + 1 < len(df) and pd.notna(df.iloc[idx+1, i]):
+                                        subject_text = str(df.iloc[idx+1, i]).strip()
+                                else:
+                                    for j in range(i+1, min(i+3, len(row.values))):
+                                        if pd.notna(row.values[j]) and str(row.values[j]).strip():
+                                            subject_text = str(row.values[j]).strip()
+                                            break
+
+                            if sl_code and subject_text and subject_text.lower() != "nan":
+                                cond_type = "first name present" if "[name]" in subject_text.lower() else "no first name"
+                                
+                                if sl_code not in temp_subjects:
+                                    temp_subjects[sl_code] = {"first_name": "", "no_first_name": ""}
+                                
+                                if "no first name" in cond_type:
+                                    temp_subjects[sl_code]["no_first_name"] = subject_text
+                                else:
+                                    temp_subjects[sl_code]["first_name"] = subject_text
+
+                # Limpa dados vazios
+                temp_subjects = {k: v for k, v in temp_subjects.items() if v["first_name"] or v["no_first_name"]}
                 
-                text_fn_clean = re.sub(r'\[Name\]\s*,?\s*', '', text_fn, flags=re.IGNORECASE).strip()
+                # Se encontrou subjects nesta aba, guarda-os e PARA de procurar noutras abas!
+                if temp_subjects:
+                    subjects_data = temp_subjects
+                    break
+                    
+        except Exception as e:
+            return None, f"Error processing Excel: {e}"
+            
+    else:
+        # Fallback para TXT ou CSV
+        file_content = file_bytes.decode('utf-8')
+        lines = file_content.splitlines()
+        for line in lines:
+            line = line.strip()
+            if not line: continue
+            match = re.match(r'^\s*(SL[\s_]?\d+)[\s\;]+(.*)', line, re.IGNORECASE)
+            if match:
+                sl_code = match.group(1).upper().replace(" ", "").replace("_", "")
+                subject_text = match.group(2).strip()
+                if subject_text:
+                    if sl_code not in subjects_data:
+                        subjects_data[sl_code] = {"first_name": "", "no_first_name": ""}
+                    if "[name]" in subject_text.lower():
+                        subjects_data[sl_code]["first_name"] = subject_text
+                    else:
+                        subjects_data[sl_code]["no_first_name"] = subject_text
+
+    if not subjects_data:
+        return None, "Não foi possível extrair Subject Lines. O script varreu todas as abas mas não encontrou o padrão."
+
+    # 2. GERAÇÃO DO CÓDIGO E4X
+    code = "<%\n"
+    code += "    var nameProper = recipient.firstName ? recipient.firstName.charAt(0).toUpperCase() + recipient.firstName.substring(1).toLowerCase() : \"\";\n"
+    code += "    var subject = \"\";\n"
+    code += "    var hasFirstName = recipient.firstName && recipient.firstName !== '' && recipient.firstName !== 'NONAME';\n"
+    
+    preview_data = []
+    is_first = True
+    
+    def extract_num(sl):
+        nums = re.findall(r'\d+', sl)
+        return int(nums[0]) if nums else 0
+        
+    sorted_sls = sorted(subjects_data.keys(), key=extract_num)
+    
+    for sl_code in sorted_sls:
+        data = subjects_data[sl_code]
+        
+        cond_prefix = "if" if is_first else "else if"
+        is_first = False
+        
+        code += f"\n      {cond_prefix} (targetData.slineCode == '{sl_code}') {{\n"
+        
+        text_fn = " ".join(data.get("first_name", "").split())
+        text_nofn = " ".join(data.get("no_first_name", "").split())
+        
+        if not text_fn and text_nofn:
+            text_nofn_clean = text_nofn.replace('"', '\\"')
+            code += f"        if (hasFirstName) {{\n          subject = \"{text_nofn_clean}\";\n        }} else {{\n          subject = \"{text_nofn_clean}\";\n        }}\n      }}"
+            preview_data.append({"originalCode": sl_code, "text": text_nofn})
+            
+        elif text_fn and not text_nofn:
+            text_nofn = re.sub(r'\[Name\]\s*,?\s*', '', text_fn, flags=re.IGNORECASE).strip()
+            if text_nofn: text_nofn = text_nofn[0].upper() + text_nofn[1:]
+            
+            text_fn_clean = re.sub(r'\[Name\]\s*,?\s*', '', text_fn, flags=re.IGNORECASE).strip()
+            if text_fn_clean: text_fn_clean = text_fn_clean[0].lower() + text_fn_clean[1:]
+            
+            code += f"        if (hasFirstName) {{\n          subject = \"\" + nameProper + \", {text_fn_clean.replace('\"', '\\\"')}\";\n        }} else {{\n          subject = \"{text_nofn.replace('\"', '\\\"')}\";\n        }}\n      }}"
+            preview_data.append({"originalCode": sl_code, "text": text_fn})
+            
+        else:
+            text_fn_clean = re.sub(r'\[Name\]\s*,?\s*', '', text_fn, flags=re.IGNORECASE).strip()
+            if text_fn.lower().strip().startswith("[name]"):
                 if text_fn_clean: text_fn_clean = text_fn_clean[0].lower() + text_fn_clean[1:]
-                
-                code += f"        if (hasFirstName) {{\n          subject = \"\" + nameProper + \", {text_fn_clean.replace('\"', '\\\"')}\";\n        }} else {{\n          subject = \"{text_nofn.replace('\"', '\\\"')}\";\n        }}\n      }}"
-                preview_data.append({"originalCode": sl_code, "text": text_fn})
-                
-            else:
-                text_fn_clean = re.sub(r'\[Name\]\s*,?\s*', '', text_fn, flags=re.IGNORECASE).strip()
-                if text_fn.lower().strip().startswith("[name]"):
-                    if text_fn_clean: text_fn_clean = text_fn_clean[0].lower() + text_fn_clean[1:]
-                
-                code += f"        if (hasFirstName) {{\n          subject = \"\" + nameProper + \", {text_fn_clean.replace('\"', '\\\"')}\";\n        }} else {{\n          subject = \"{text_nofn.replace('\"', '\\\"')}\";\n        }}\n      }}"
-                preview_data.append({"originalCode": sl_code, "text": f"{text_fn}"})
             
-        code += "\n    %>\n    <%= subject %>\n    <%\n    if( subject == '' || subject == undefined ) {\n"
-        code += "      var attemptedCode = targetData.slineCode || \"UNKNOWN\";\n"
-        code += "      delivery.cancelMessage( 'Empty Subject Line generated for slineCode: ' + attemptedCode );\n    }\n    %>"
+            code += f"        if (hasFirstName) {{\n          subject = \"\" + nameProper + \", {text_fn_clean.replace('\"', '\\\"')}\";\n        }} else {{\n          subject = \"{text_nofn.replace('\"', '\\\"')}\";\n        }}\n      }}"
+            preview_data.append({"originalCode": sl_code, "text": f"{text_fn}"})
+        
+    code += "\n    %>\n    <%= subject %>\n    <%\n    if( subject == '' || subject == undefined ) {\n"
+    code += "      var attemptedCode = targetData.slineCode || \"UNKNOWN\";\n"
+    code += "      delivery.cancelMessage( 'Empty Subject Line generated for slineCode: ' + attemptedCode );\n    }\n    %>"
 
-        return preview_data, code
+    return preview_data, code
 
     except Exception as e:
         return None, f"Error processing Excel: {e}"
