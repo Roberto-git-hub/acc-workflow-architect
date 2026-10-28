@@ -386,7 +386,6 @@ def generate_acc_subject_code(file_bytes, file_name):
         xls = pd.ExcelFile(io.BytesIO(file_bytes))
         sheet_to_use = None
         
-        # Tenta encontrar a aba ideal, mas se não encontrar, procura em todas
         for s in xls.sheet_names:
             s_lower = s.lower()
             if 'url' in s_lower or 'matrix' in s_lower or 'copy' in s_lower or 'sl' in s_lower:
@@ -408,8 +407,8 @@ def generate_acc_subject_code(file_bytes, file_name):
                     # Padrão 2: "SL_1: [Name] get up to..." (SLs & PHs)
                     match_sls = re.search(r'^(SL[\s_]?\d+)[^\w](.*)', val_str, re.IGNORECASE | re.DOTALL)
                     
-                    # Padrão 3: Célula diz apenas "SL1" e o texto está ao lado (Copy Deck)
-                    match_copy_deck = (val_str.upper().startswith("SL") and len(val_str) <= 5 and not bool(re.search(r'\(|\:|\|', val_str)))
+                    # Padrão 3: Célula diz apenas "SL1", "SL2" (Expressão Regular rigorosa que ignora "SL/PH")
+                    match_copy_deck = bool(re.match(r'^SL[\s_]?\d+$', val_str, re.IGNORECASE))
                     
                     sl_code = None
                     subject_text = ""
@@ -442,7 +441,7 @@ def generate_acc_subject_code(file_bytes, file_name):
                         else:
                             subjects_data[sl_code]["first_name"] = subject_text
 
-        # Limpa dados vazios que possam ter sido apanhados por engano
+        # Limpa dados vazios
         subjects_data = {k: v for k, v in subjects_data.items() if v["first_name"] or v["no_first_name"]}
 
         if not subjects_data:
@@ -450,14 +449,14 @@ def generate_acc_subject_code(file_bytes, file_name):
 
         # 2. GERAÇÃO DO CÓDIGO E4X (Focado estritamente no slineCode)
         code = "<%\n"
-        code += "var nameProper = recipient.firstName ? recipient.firstName.charAt(0).toUpperCase() + recipient.firstName.substring(1).toLowerCase() : \"\";\n"
-        code += "var subject = \"\";\n"
-        code += "var hasFirstName = recipient.firstName && recipient.firstName !== '' && recipient.firstName !== 'NONAME';\n"
+        code += "    var nameProper = recipient.firstName ? recipient.firstName.charAt(0).toUpperCase() + recipient.firstName.substring(1).toLowerCase() : \"\";\n"
+        code += "    var subject = \"\";\n"
+        code += "    var hasFirstName = recipient.firstName && recipient.firstName !== '' && recipient.firstName !== 'NONAME';\n"
         
         preview_data = []
         is_first = True
         
-        # Ordena os SL codes numericamente (para que o SL2 venha antes do SL10)
+        # Ordena os SL codes numericamente
         def extract_num(sl):
             nums = re.findall(r'\d+', sl)
             return int(nums[0]) if nums else 0
@@ -470,15 +469,15 @@ def generate_acc_subject_code(file_bytes, file_name):
             cond_prefix = "if" if is_first else "else if"
             is_first = False
             
-            code += f"\n  {cond_prefix} (targetData.slineCode == '{sl_code}') {{\n"
+            code += f"\n      {cond_prefix} (targetData.slineCode == '{sl_code}') {{\n"
             
             text_fn = data.get("first_name", "")
             text_nofn = data.get("no_first_name", "")
             
-            # CENÁRIO 1: Matriz não pede nome (texto estático, ex: Copy Deck)
+            # CENÁRIO 1: Matriz não pede nome (texto estático)
             if not text_fn and text_nofn:
                 text_nofn_clean = text_nofn.replace('"', '\\"')
-                code += f"    subject = \"{text_nofn_clean}\";\n  }}"
+                code += f"        subject = \"{text_nofn_clean}\";\n      }}"
                 preview_data.append({"originalCode": sl_code, "text": text_nofn})
                 
             # CENÁRIO 2: Matriz pede nome, gera a versão com e sem nome automaticamente
@@ -489,20 +488,22 @@ def generate_acc_subject_code(file_bytes, file_name):
                 text_fn_clean = re.sub(r'\[Name\]\s*,?\s*', '', text_fn, flags=re.IGNORECASE).strip()
                 if text_fn_clean: text_fn_clean = text_fn_clean[0].lower() + text_fn_clean[1:]
                 
-                code += f"    if (hasFirstName) {{\n      subject = nameProper + \", {text_fn_clean.replace('\"', '\\\"')}\";\n    }} else {{\n      subject = \"{text_nofn.replace('\"', '\\\"')}\";\n    }}\n  }}"
+                # ADICIONADO: "" + nameProper +
+                code += f"        if (hasFirstName) {{\n          subject = \"\" + nameProper + \", {text_fn_clean.replace('\"', '\\\"')}\";\n        }} else {{\n          subject = \"{text_nofn.replace('\"', '\\\"')}\";\n        }}\n      }}"
                 preview_data.append({"originalCode": sl_code, "text": text_fn})
                 
-            # CENÁRIO 3: A matriz tem as duas versões explícitas (URL Matrix)
+            # CENÁRIO 3: A matriz tem as duas versões explícitas
             else:
                 text_fn_clean = re.sub(r'\[Name\]\s*,?\s*', '', text_fn, flags=re.IGNORECASE).strip()
                 if text_fn_clean: text_fn_clean = text_fn_clean[0].lower() + text_fn_clean[1:]
                 
-                code += f"    if (hasFirstName) {{\n      subject = nameProper + \", {text_fn_clean.replace('\"', '\\\"')}\";\n    }} else {{\n      subject = \"{text_nofn.replace('\"', '\\\"')}\";\n    }}\n  }}"
+                # ADICIONADO: "" + nameProper +
+                code += f"        if (hasFirstName) {{\n          subject = \"\" + nameProper + \", {text_fn_clean.replace('\"', '\\\"')}\";\n        }} else {{\n          subject = \"{text_nofn.replace('\"', '\\\"')}\";\n        }}\n      }}"
                 preview_data.append({"originalCode": sl_code, "text": f"{text_fn}"})
             
-        code += "\n%>\n<%= subject %>\n<%\nif( subject == '' || subject == undefined ) {\n"
-        code += "  var attemptedCode = targetData.slineCode || \"UNKNOWN\";\n"
-        code += "  delivery.cancelMessage( 'Empty Subject Line generated for slineCode: ' + attemptedCode );\n}\n%>"
+        code += "\n    %>\n    <%= subject %>\n    <%\n    if( subject == '' || subject == undefined ) {\n"
+        code += "      var attemptedCode = targetData.slineCode || \"UNKNOWN\";\n"
+        code += "      delivery.cancelMessage( 'Empty Subject Line generated for slineCode: ' + attemptedCode );\n    }\n    %>"
 
         return preview_data, code
 
