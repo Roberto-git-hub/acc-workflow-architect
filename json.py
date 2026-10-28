@@ -402,19 +402,19 @@ def generate_acc_subject_code(file_bytes, file_name):
                     val_str = str(val).strip()
                     
                     # Padrão 1: "SL1 (First name present)" (URL Matrix)
-                    match_url_matrix = re.search(r'^(SL\d+)\s*\((.*?)\)', val_str, re.IGNORECASE)
+                    match_url_matrix = re.search(r'^\s*(SL\d+)\s*\((.*?)\)', val_str, re.IGNORECASE)
                     
                     # Padrão 2: "SL_1: \n [Name] get up to..." (SLs & PHs - Tudo na mesma célula)
                     match_sls = None
                     if "\n" in val_str or ":" in val_str:
-                        m = re.search(r'^(SL[\s_]?\d+)[\s\:\-]+(.*)', val_str, re.IGNORECASE | re.DOTALL)
+                        m = re.search(r'^\s*(SL[\s_]?\d+)[\s\:\-]+(.*)', val_str, re.IGNORECASE | re.DOTALL)
                         if m and m.group(2).strip():
                             match_sls = m
                             
                     # Padrão 3: Célula diz apenas "SL1", texto está à direita (Copy Deck)
                     match_copy_deck = False
                     if not match_sls and not match_url_matrix:
-                        match_copy_deck = bool(re.match(r'^SL[\s_]?\d+$', val_str, re.IGNORECASE))
+                        match_copy_deck = bool(re.match(r'^\s*SL[\s_]?\d+\s*$', val_str, re.IGNORECASE))
                     
                     sl_code = None
                     subject_text = ""
@@ -426,7 +426,7 @@ def generate_acc_subject_code(file_bytes, file_name):
                         if i + 1 < len(row.values) and pd.notna(row.values[i+1]):
                             subject_text = str(row.values[i+1]).strip()
                             
-                    elif match_sls: 
+                    elif match_sls: # CONDIÇÃO "Versions" REMOVIDA PARA NÃO QUEBRAR
                         sl_code = match_sls.group(1).upper().replace(" ", "").replace("_", "")
                         subject_text = match_sls.group(2).strip()
                         cond_type = "first name present" if "[name]" in subject_text.lower() else "no first name"
@@ -453,7 +453,7 @@ def generate_acc_subject_code(file_bytes, file_name):
         subjects_data = {k: v for k, v in subjects_data.items() if v["first_name"] or v["no_first_name"]}
 
         if not subjects_data:
-            return None, "Não foi possível extrair Subject Lines nesta aba. Verifique o formato."
+            return None, "Não foi possível extrair Subject Lines nesta aba."
 
         # 2. GERAÇÃO DO CÓDIGO E4X
         code = "<%\n"
