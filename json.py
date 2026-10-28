@@ -29,12 +29,10 @@ st.markdown("""
         font-family: 'Inter', sans-serif !important;
     }
 
-    /* Hides the hamburger menu and default Streamlit footer for a cleaner look */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
-    /* More elegant titles */
     h1 {
         background: -webkit-linear-gradient(45deg, #0071e3, #40E0D0);
         -webkit-background-clip: text;
@@ -48,7 +46,6 @@ st.markdown("""
         letter-spacing: -0.5px;
     }
 
-    /* Main buttons styling */
     .stButton>button {
         border-radius: 8px !important;
         font-weight: 600 !important;
@@ -64,7 +61,6 @@ st.markdown("""
         color: #FFFFFF !important;
     }
     
-    /* Primary buttons */
     .stButton>button[data-baseweb="button"].st-emotion-cache-1r6slb0 {
         background: linear-gradient(135deg, #0071e3, #005bb5) !important;
         color: white !important;
@@ -76,7 +72,6 @@ st.markdown("""
         box-shadow: 0 8px 25px rgba(0, 113, 227, 0.5) !important;
     }
 
-    /* Metric Cards (Dashboard style) */
     div[data-testid="metric-container"] {
         background: linear-gradient(145deg, #1A1C23, #121418);
         border: 1px solid #2A2D35;
@@ -90,7 +85,6 @@ st.markdown("""
         border-color: #0071e3;
         box-shadow: 0 8px 25px rgba(0, 113, 227, 0.15);
     }
-    /* Metric label color */
     div[data-testid="metric-container"] > div > div > div {
         color: #8E8E93 !important;
         font-weight: 500 !important;
@@ -118,7 +112,6 @@ st.markdown("""
         font-weight: 600 !important;
     }
     
-    /* Info/Success/Error boxes with softer corners */
     div.stAlert {
         border-radius: 10px !important;
         border: 1px solid rgba(255,255,255,0.05) !important;
@@ -347,7 +340,6 @@ def process_data(df):
                     r["isABTest"] = "FALSE"
                 r.update({"extraColumnA": "", "extraColumnB": "", "extraColumnC": ""})
                 
-                # --- LIMPEZA FINAL DO SCRIPT ANTES DE SALVAR ---
                 r["SegmentCode"] = str(r["SegmentCode"]).replace("/", "").strip()
                 r["SlineCode"] = str(r["SlineCode"]).replace("/", "").strip()
                 
@@ -365,7 +357,6 @@ def process_data(df):
                 record["isABTest"] = "FALSE"
             record.update({"extraColumnA": "", "extraColumnB": "", "extraColumnC": ""})
             
-            # --- LIMPEZA FINAL DO SCRIPT ANTES DE SALVAR ---
             record["SegmentCode"] = str(record["SegmentCode"]).replace("/", "").strip()
             record["SlineCode"] = str(record["SlineCode"]).replace("/", "").strip()
             
@@ -379,99 +370,82 @@ def process_data(df):
 def generate_acc_subject_code(file_bytes, file_name):
     subjects_data = {}
     
-    if file_name.endswith(('.xlsx', '.xls')):
-        try:
-            xls = pd.ExcelFile(io.BytesIO(file_bytes))
+    if not file_name.endswith(('.xlsx', '.xls')):
+        return None, "Please upload the Samsung Excel file."
+
+    try:
+        xls = pd.ExcelFile(io.BytesIO(file_bytes))
+        
+        # 1. MOTOR DE EXTRAÇÃO DE TEXTO (Varre TODAS as abas)
+        for sheet in xls.sheet_names:
+            df = pd.read_excel(xls, sheet_name=sheet, header=None)
+            temp_subjects = {}
             
-            # 1. MOTOR DE EXTRAÇÃO DE TEXTO (Varre TODAS as abas automaticamente)
-            for sheet in xls.sheet_names:
-                df = pd.read_excel(xls, sheet_name=sheet, header=None)
-                temp_subjects = {}
-                
-                for idx, row in df.iterrows():
-                    for i, val in enumerate(row.values):
-                        if pd.notna(val):
-                            val_str = str(val).strip()
-                            
-                            match_url_matrix = re.search(r'^\s*(SL\d+)\s*\((.*?)\)', val_str, re.IGNORECASE)
-                            
-                            match_sls = None
-                            if "\n" in val_str or ":" in val_str:
-                                m = re.search(r'^\s*(SL[\s_]?\d+)[\s\:\-]+(.*)', val_str, re.IGNORECASE | re.DOTALL)
-                                if m and m.group(2).strip():
-                                    match_sls = m
-                                    
-                            match_standalone = None
-                            if not match_sls and not match_url_matrix:
-                                m_stand = re.match(r'^\s*(SL[\s_]?\d+)[\s\:]*$', val_str, re.IGNORECASE)
-                                if m_stand:
-                                    match_standalone = m_stand
-                            
-                            sl_code = None
-                            subject_text = ""
+            for idx, row in df.iterrows():
+                for i, val in enumerate(row.values):
+                    if pd.notna(val):
+                        val_str = str(val).strip()
+                        
+                        match_url_matrix = re.search(r'^\s*(SL\d+)\s*\((.*?)\)', val_str, re.IGNORECASE)
+                        
+                        match_sls = None
+                        if "\n" in val_str or ":" in val_str:
+                            m = re.search(r'^\s*(SL[\s_]?\d+)[\s\:\-]+(.*)', val_str, re.IGNORECASE | re.DOTALL)
+                            if m and m.group(2).strip():
+                                match_sls = m
+                                
+                        match_standalone = None
+                        if not match_sls and not match_url_matrix:
+                            m_stand = re.match(r'^\s*(SL[\s_]?\d+)[\s\:]*$', val_str, re.IGNORECASE)
+                            if m_stand:
+                                match_standalone = m_stand
+                        
+                        sl_code = None
+                        subject_text = ""
 
-                            if match_url_matrix:
-                                sl_code = match_url_matrix.group(1).upper().replace("_", "")
-                                cond_type = match_url_matrix.group(2).lower()
-                                if i + 1 < len(row.values) and pd.notna(row.values[i+1]):
-                                    subject_text = str(row.values[i+1]).strip()
-                                    
-                            elif match_sls: 
-                                sl_code = match_sls.group(1).upper().replace(" ", "").replace("_", "")
-                                subject_text = match_sls.group(2).strip()
+                        if match_url_matrix:
+                            sl_code = match_url_matrix.group(1).upper().replace("_", "")
+                            cond_type = match_url_matrix.group(2).lower()
+                            if i + 1 < len(row.values) and pd.notna(row.values[i+1]):
+                                subject_text = str(row.values[i+1]).strip()
                                 
-                            elif match_standalone:
-                                sl_code = match_standalone.group(1).upper().replace(" ", "").replace("_", "")
-                                
-                                if ":" in val_str:
-                                    if idx + 1 < len(df) and pd.notna(df.iloc[idx+1, i]):
-                                        subject_text = str(df.iloc[idx+1, i]).strip()
-                                else:
-                                    for j in range(i+1, min(i+3, len(row.values))):
-                                        if pd.notna(row.values[j]) and str(row.values[j]).strip():
-                                            subject_text = str(row.values[j]).strip()
-                                            break
+                        elif match_sls: 
+                            sl_code = match_sls.group(1).upper().replace(" ", "").replace("_", "")
+                            subject_text = match_sls.group(2).strip()
+                            
+                        elif match_standalone:
+                            sl_code = match_standalone.group(1).upper().replace(" ", "").replace("_", "")
+                            
+                            if ":" in val_str:
+                                if idx + 1 < len(df) and pd.notna(df.iloc[idx+1, i]):
+                                    subject_text = str(df.iloc[idx+1, i]).strip()
+                            else:
+                                for j in range(i+1, min(i+3, len(row.values))):
+                                    if pd.notna(row.values[j]) and str(row.values[j]).strip():
+                                        subject_text = str(row.values[j]).strip()
+                                        break
 
-                            if sl_code and subject_text and subject_text.lower() != "nan":
-                                cond_type = "first name present" if "[name]" in subject_text.lower() else "no first name"
-                                
-                                if sl_code not in temp_subjects:
-                                    temp_subjects[sl_code] = {"first_name": "", "no_first_name": ""}
-                                
-                                if "no first name" in cond_type:
-                                    temp_subjects[sl_code]["no_first_name"] = subject_text
-                                else:
-                                    temp_subjects[sl_code]["first_name"] = subject_text
+                        if sl_code and subject_text and subject_text.lower() != "nan":
+                            cond_type = "first name present" if "[name]" in subject_text.lower() else "no first name"
+                            
+                            if sl_code not in temp_subjects:
+                                temp_subjects[sl_code] = {"first_name": "", "no_first_name": ""}
+                            
+                            if "no first name" in cond_type:
+                                temp_subjects[sl_code]["no_first_name"] = subject_text
+                            else:
+                                temp_subjects[sl_code]["first_name"] = subject_text
 
-                # Limpa dados vazios
-                temp_subjects = {k: v for k, v in temp_subjects.items() if v["first_name"] or v["no_first_name"]}
-                
-                # Se encontrou subjects nesta aba, guarda-os e PARA de procurar noutras abas!
-                if temp_subjects:
-                    subjects_data = temp_subjects
-                    break
-                    
-        except Exception as e:
-            return None, f"Error processing Excel: {e}"
+            # Limpa dados vazios
+            temp_subjects = {k: v for k, v in temp_subjects.items() if v["first_name"] or v["no_first_name"]}
             
-    else:
-        # Fallback para TXT ou CSV
-        file_content = file_bytes.decode('utf-8')
-        lines = file_content.splitlines()
-        for line in lines:
-            line = line.strip()
-            if not line: continue
-            match = re.match(r'^\s*(SL[\s_]?\d+)[\s\;]+(.*)', line, re.IGNORECASE)
-            if match:
-                sl_code = match.group(1).upper().replace(" ", "").replace("_", "")
-                subject_text = match.group(2).strip()
-                if subject_text:
-                    if sl_code not in subjects_data:
-                        subjects_data[sl_code] = {"first_name": "", "no_first_name": ""}
-                    if "[name]" in subject_text.lower():
-                        subjects_data[sl_code]["first_name"] = subject_text
-                    else:
-                        subjects_data[sl_code]["no_first_name"] = subject_text
+            # Se encontrou subjects nesta aba, guarda-os e PARA de procurar noutras abas!
+            if temp_subjects:
+                subjects_data = temp_subjects
+                break
+                
+    except Exception as e:
+        return None, f"Error processing Excel: {e}"
 
     if not subjects_data:
         return None, "Não foi possível extrair Subject Lines. O script varreu todas as abas mas não encontrou o padrão."
@@ -531,8 +505,6 @@ def generate_acc_subject_code(file_bytes, file_name):
 
     return preview_data, code
 
-    except Exception as e:
-        return None, f"Error processing Excel: {e}"
 # =====================================================================
 # STREAMLIT INTERFACE - MAIN TABS
 # =====================================================================
