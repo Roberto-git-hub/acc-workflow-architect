@@ -349,7 +349,6 @@ def process_data(df):
                 
                 r["SegmentCode"] = str(r["SegmentCode"]).replace("/", "").strip()
                 r["SlineCode"] = str(r["SlineCode"]).replace("/", "").strip()
-                
                 final_json_data.append(r)
         else:
             code = str(segment_code).replace("(100%)", "").replace("100%:", "").replace("100%", "").replace("/", "").strip()
@@ -366,7 +365,6 @@ def process_data(df):
             
             record["SegmentCode"] = str(record["SegmentCode"]).replace("/", "").strip()
             record["SlineCode"] = str(record["SlineCode"]).replace("/", "").strip()
-            
             final_json_data.append(record)
 
     return final_json_data
@@ -381,7 +379,6 @@ def generate_acc_subject_code(file_bytes, file_name):
         try:
             xls = pd.ExcelFile(io.BytesIO(file_bytes))
             
-            # Ordenar abas por relevância (URL Matrix > SLs & PHs > Copy Deck > Resto)
             def sheet_score(name):
                 n = name.lower()
                 if 'url' in n or 'matrix' in n: return 4
@@ -391,7 +388,6 @@ def generate_acc_subject_code(file_bytes, file_name):
                 
             sorted_sheets = sorted(xls.sheet_names, key=sheet_score, reverse=True)
             
-            # 1. MOTOR DE EXTRAÇÃO DE TEXTO (Varre abas pela ordem de relevância)
             for sheet in sorted_sheets:
                 df = pd.read_excel(xls, sheet_name=sheet, header=None)
                 temp_subjects = {}
@@ -440,7 +436,6 @@ def generate_acc_subject_code(file_bytes, file_name):
                                             subject_text = str(row.values[j]).strip()
                                             break
 
-                            # Validação final e bloqueio anti-preheaders
                             if sl_code and subject_text and subject_text.lower() != "nan":
                                 if re.match(r'^(PH|Preheader|Pre-header)[\s_]?\d*[\s\:]*$', subject_text, re.IGNORECASE):
                                     continue
@@ -455,10 +450,8 @@ def generate_acc_subject_code(file_bytes, file_name):
                                 else:
                                     temp_subjects[sl_code]["first_name"] = subject_text
 
-                # Limpa dados vazios
                 temp_subjects = {k: v for k, v in temp_subjects.items() if v["first_name"] or v["no_first_name"]}
                 
-                # Se encontrou subjects válidos nesta aba, PARA de procurar nas outras!
                 if temp_subjects:
                     subjects_data = temp_subjects
                     break
@@ -467,7 +460,6 @@ def generate_acc_subject_code(file_bytes, file_name):
             return None, f"Error processing Excel: {e}"
             
     else:
-        # Fallback para TXT ou CSV
         try:
             file_content = file_bytes.decode('utf-8')
             lines = file_content.splitlines()
@@ -491,7 +483,6 @@ def generate_acc_subject_code(file_bytes, file_name):
     if not subjects_data:
         return None, "Não foi possível extrair Subject Lines. O script varreu todas as abas mas não encontrou o formato válido."
 
-    # 2. GERAÇÃO DO CÓDIGO E4X
     code = "<%\n"
     code += "    var nameProper = recipient.firstName ? recipient.firstName.charAt(0).toUpperCase() + recipient.firstName.substring(1).toLowerCase() : \"\";\n"
     code += "    var subject = \"\";\n"
@@ -879,9 +870,15 @@ with tab2:
                         seg_name = "N/A" if seg == "N_A" else seg
                         nome_aba = re.sub(r'[/\\?*\[\]]', '', job_id if seg_name == "N/A" else f"{job_id} - {seg_name}")[:31]
                         
-                        if i == 0: ws_target = ws_temp_rev
+                        if i == 0: 
+                            ws_target = ws_temp_rev
                         else:
                             ws_target = wb_rev.copy_worksheet(ws_temp_rev)
+                            
+                            # --- CORREÇÃO: Forçar a cópia dos menus Dropdown (Data Validation) ---
+                            for dv in ws_temp_rev.data_validations.dataValidation:
+                                ws_target.add_data_validation(copy.deepcopy(dv))
+                                
                             for img_bytes, anchor in logos_rev:
                                 try:
                                     nova_img = xlImage(io.BytesIO(img_bytes)); nova_img.anchor = copy.copy(anchor)
@@ -914,9 +911,15 @@ with tab2:
                         seg_name = "N/A" if enumerate_seg == "N_A" else enumerate_seg
                         nome_aba = re.sub(r'[/\\?*\[\]]', '', job_id if seg_name == "N/A" else f"{job_id} - {seg_name}")[:31]
                         
-                        if i == 0: ws_target = ws_temp_lc
+                        if i == 0: 
+                            ws_target = ws_temp_lc
                         else:
                             ws_target = wb_lc.copy_worksheet(ws_temp_lc)
+                            
+                            # --- CORREÇÃO: Forçar a cópia dos menus Dropdown (Data Validation) ---
+                            for dv in ws_temp_lc.data_validations.dataValidation:
+                                ws_target.add_data_validation(copy.deepcopy(dv))
+                                
                             for img_bytes, anchor in logos_lc:
                                 try:
                                     nova_img = xlImage(io.BytesIO(img_bytes)); nova_img.anchor = copy.copy(anchor)
