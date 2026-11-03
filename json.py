@@ -766,7 +766,21 @@ with tab2:
                         
                         subtasks = campos.get("subtasks", [])
                         segmentos_encontrados = set()
+
+                        def extrair_segmentos(texto):
+                            if not texto: return
+                            matches = re.findall(r'_(?:WK|T|WAVE)\d+_([A-Za-z0-9_]+)', texto, re.IGNORECASE)
+                            for m in matches:
+                                seg = re.sub(r'(\.xlsx|\.csv|\.xls)$', '', m, flags=re.IGNORECASE)
+                                seg = re.sub(r'_V\d+$', '', seg, flags=re.IGNORECASE)
+                                if seg:
+                                    segmentos_encontrados.add(seg.upper())
+
+                        # 1. Procura nos anexos do ticket principal (Ficheiros Matrix)
+                        for anexo in campos.get("attachment", []):
+                            extrair_segmentos(anexo.get("filename", ""))
                         
+                        # 2. Procura nos subtasks (comentários e anexos)
                         for sub in subtasks:
                             sub_key = sub.get("key")
                             url_sub = f"{JIRA_URL}/rest/api/2/issue/{sub_key}"
@@ -776,14 +790,12 @@ with tab2:
                                 sub_data = resp_sub.json()
                                 sub_fields = sub_data.get("fields", {})
                                 
+                                for anexo in sub_fields.get("attachment", []):
+                                    extrair_segmentos(anexo.get("filename", ""))
+                                
                                 comentarios = sub_fields.get("comment", {}).get("comments", [])
                                 for comment in comentarios:
-                                    linhas = comment.get("body", "").split('\n')
-                                    for linha in linhas:
-                                        match = re.search(r'_WK\d+_([A-Za-z0-9_]+)', linha.strip())
-                                        if match:
-                                            seg = match.group(1).strip().upper()
-                                            if seg: segmentos_encontrados.add(re.sub(r'_V\d+$', '', seg))
+                                    extrair_segmentos(comment.get("body", ""))
                                             
                                 sub_summary = sub_fields.get("summary", "").upper()
                                 if "1A QA" in sub_summary or "QA REVIEW" in sub_summary:
@@ -870,15 +882,11 @@ with tab2:
                         seg_name = "N/A" if seg == "N_A" else seg
                         nome_aba = re.sub(r'[/\\?*\[\]]', '', job_id if seg_name == "N/A" else f"{job_id} - {seg_name}")[:31]
                         
-                        if i == 0: 
-                            ws_target = ws_temp_rev
+                        if i == 0: ws_target = ws_temp_rev
                         else:
                             ws_target = wb_rev.copy_worksheet(ws_temp_rev)
-                            
-                            # --- CORREÇÃO: Forçar a cópia dos menus Dropdown (Data Validation) ---
                             for dv in ws_temp_rev.data_validations.dataValidation:
                                 ws_target.add_data_validation(copy.deepcopy(dv))
-                                
                             for img_bytes, anchor in logos_rev:
                                 try:
                                     nova_img = xlImage(io.BytesIO(img_bytes)); nova_img.anchor = copy.copy(anchor)
@@ -911,15 +919,11 @@ with tab2:
                         seg_name = "N/A" if enumerate_seg == "N_A" else enumerate_seg
                         nome_aba = re.sub(r'[/\\?*\[\]]', '', job_id if seg_name == "N/A" else f"{job_id} - {seg_name}")[:31]
                         
-                        if i == 0: 
-                            ws_target = ws_temp_lc
+                        if i == 0: ws_target = ws_temp_lc
                         else:
                             ws_target = wb_lc.copy_worksheet(ws_temp_lc)
-                            
-                            # --- CORREÇÃO: Forçar a cópia dos menus Dropdown (Data Validation) ---
                             for dv in ws_temp_lc.data_validations.dataValidation:
                                 ws_target.add_data_validation(copy.deepcopy(dv))
-                                
                             for img_bytes, anchor in logos_lc:
                                 try:
                                     nova_img = xlImage(io.BytesIO(img_bytes)); nova_img.anchor = copy.copy(anchor)
