@@ -769,18 +769,28 @@ with tab2:
 
                         def extrair_segmentos(texto):
                             if not texto: return
-                            matches = re.findall(r'_(?:WK|T|WAVE)\d+_([A-Za-z0-9_]+)', texto, re.IGNORECASE)
+                            # Procura o segmento padrão isolando sufixos e números inúteis
+                            matches = re.findall(r'_(?:WK|T|WAVE)[_\s]*\d+_([A-Za-z0-9_]+)', texto, re.IGNORECASE)
                             for m in matches:
-                                seg = re.sub(r'(\.xlsx|\.csv|\.xls)$', '', m, flags=re.IGNORECASE)
-                                seg = re.sub(r'_V\d+$', '', seg, flags=re.IGNORECASE)
-                                if seg:
-                                    segmentos_encontrados.add(seg.upper())
+                                seg = str(m)
+                                # 1. Remover extensões
+                                seg = re.sub(r'(\.xlsx|\.csv|\.xls|\.pdf|\.txt|\.zip|\.docx?)$', '', seg, flags=re.IGNORECASE)
+                                # 2. Remover sufixos de versão ou lixo como FINAL, DRAFT, MATRIX
+                                seg = re.sub(r'_(?:V\d+|FINAL|DRAFT|MATRIX|URL_MATRIX|COPY_DECK)$', '', seg, flags=re.IGNORECASE)
+                                # 3. Remover lixo que possa ter ficado no meio (ex: repetições de WK45, T2)
+                                seg = re.sub(r'(?:WK|T|WAVE)[_\s]*\d+', '', seg, flags=re.IGNORECASE)
+                                seg = re.sub(r'ALT_TEXT(?:_BY_MODULE)?', '', seg, flags=re.IGNORECASE)
+                                # 4. Limpar underscores soltos
+                                seg = seg.strip('_').upper()
+                                # 5. Guardar se for um texto real e não apenas números
+                                if seg and not seg.isnumeric():
+                                    seg = re.sub(r'_{2,}', '_', seg)
+                                    segmentos_encontrados.add(seg)
 
-                        # 1. Procura nos anexos do ticket principal (Ficheiros Matrix)
+                        # Varre os anexos do ticket principal
                         for anexo in campos.get("attachment", []):
                             extrair_segmentos(anexo.get("filename", ""))
                         
-                        # 2. Procura nos subtasks (comentários e anexos)
                         for sub in subtasks:
                             sub_key = sub.get("key")
                             url_sub = f"{JIRA_URL}/rest/api/2/issue/{sub_key}"
@@ -790,9 +800,11 @@ with tab2:
                                 sub_data = resp_sub.json()
                                 sub_fields = sub_data.get("fields", {})
                                 
+                                # Varre os anexos das subtasks
                                 for anexo in sub_fields.get("attachment", []):
                                     extrair_segmentos(anexo.get("filename", ""))
                                 
+                                # Varre os comentários das subtasks
                                 comentarios = sub_fields.get("comment", {}).get("comments", [])
                                 for comment in comentarios:
                                     extrair_segmentos(comment.get("body", ""))
