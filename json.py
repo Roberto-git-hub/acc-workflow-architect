@@ -550,7 +550,6 @@ tab1, tab2, tab3 = st.tabs(["⚙️ JSON Converter", "📦 ZIP Generator", "✉�
 # TAB 1: JSON GENERATOR (Waterfall)
 # ---------------------------------------------------------------------
 with tab1:
-    
     if 'jira_dados' in st.session_state:
         jd = st.session_state['jira_dados']
         ticket_id = jd.get('ticket', 'N/A')
@@ -595,6 +594,9 @@ with tab1:
             
             if st.button("🚀 Analyze and Generate Structure", type="primary"):
                 json_objects = process_data(df)
+                
+                # Salva os segmentos extraídos para a Aba 2
+                st.session_state['tab1_segments'] = sorted(list(set([obj.get("CellName", "").replace("-test", "") for obj in json_objects if obj.get("CellName")])))
                 
                 st.markdown("<br><h3>📊 Campaign Metadata</h3>", unsafe_allow_html=True)
                 colA, colB, colC = st.columns(3)
@@ -692,7 +694,7 @@ with tab1:
                 st.markdown("<br><h3>💻 Output Deliverables</h3>", unsafe_allow_html=True)
                 
                 with st.expander("🔗 Open Shareable Link (For Workflow Configurator)", expanded=True):
-                    st.info("Copy the link below and paste it into the Jira ticket or spreadsheet. Anyone clicking it will see the JSON layout.")
+                    st.info("Copy the link below and paste it into the Jira ticket or spreadsheet.")
                     st.code(shareable_link, language='text')
                 
                 with st.expander("📄 View & Download Raw JSON Output"):
@@ -707,10 +709,10 @@ with tab1:
 # ---------------------------------------------------------------------
 with tab2:
     st.markdown("### 📦 Generate Package & QA Folders")
-    st.write("Fetch Jira metadata to automatically generate the complete folder hierarchy and populate QA spreadsheets.")
+    st.write("Fetch Jira metadata and read the Matrix to guarantee 100% accurate folder generation.")
     
     with st.container(border=True):
-        st.markdown("#### 🔌 1. Jira Connection")
+        st.markdown("#### 🔌 1. Jira Connection (Fetch Metadata)")
         
         try:
             JIRA_EMAIL = st.secrets["JIRA_EMAIL"]
@@ -725,7 +727,7 @@ with tab2:
         with col_j2:
             st.write("")
             st.write("")
-            fetch_btn = st.button("Fetch Data", use_container_width=True)
+            fetch_btn = st.button("Fetch Jira Metadata", use_container_width=True)
         with col_j3:
             st.write("")
             st.write("")
@@ -767,27 +769,22 @@ with tab2:
                         subtasks = campos.get("subtasks", [])
                         segmentos_encontrados = set()
 
+                        # Fallback inteligente (Apanha segmentos do Jira, mas ignora lixo claro)
                         def extrair_segmentos(texto):
                             if not texto: return
-                            # Procura o segmento padrão isolando sufixos e números inúteis
                             matches = re.findall(r'_(?:WK|T|WAVE)[_\s]*\d+_([A-Za-z0-9_]+)', texto, re.IGNORECASE)
                             for m in matches:
                                 seg = str(m)
-                                # 1. Remover extensões
                                 seg = re.sub(r'(\.xlsx|\.csv|\.xls|\.pdf|\.txt|\.zip|\.docx?)$', '', seg, flags=re.IGNORECASE)
-                                # 2. Remover sufixos de versão ou lixo como FINAL, DRAFT, MATRIX
                                 seg = re.sub(r'_(?:V\d+|FINAL|DRAFT|MATRIX|URL_MATRIX|COPY_DECK)$', '', seg, flags=re.IGNORECASE)
-                                # 3. Remover lixo que possa ter ficado no meio (ex: repetições de WK45, T2)
                                 seg = re.sub(r'(?:WK|T|WAVE)[_\s]*\d+', '', seg, flags=re.IGNORECASE)
                                 seg = re.sub(r'ALT_TEXT(?:_BY_MODULE)?', '', seg, flags=re.IGNORECASE)
-                                # 4. Limpar underscores soltos
                                 seg = seg.strip('_').upper()
-                                # 5. Guardar se for um texto real e não apenas números
-                                if seg and not seg.isnumeric():
-                                    seg = re.sub(r'_{2,}', '_', seg)
+                                seg = re.sub(r'_{2,}', '_', seg)
+                                
+                                if seg and not seg.isnumeric() and seg not in ["FINAL", "DRAFT", "MATRIX", "V1", "V2", "V3"]:
                                     segmentos_encontrados.add(seg)
 
-                        # Varre os anexos do ticket principal
                         for anexo in campos.get("attachment", []):
                             extrair_segmentos(anexo.get("filename", ""))
                         
@@ -799,12 +796,9 @@ with tab2:
                             if resp_sub.status_code == 200:
                                 sub_data = resp_sub.json()
                                 sub_fields = sub_data.get("fields", {})
-                                
-                                # Varre os anexos das subtasks
                                 for anexo in sub_fields.get("attachment", []):
                                     extrair_segmentos(anexo.get("filename", ""))
                                 
-                                # Varre os comentários das subtasks
                                 comentarios = sub_fields.get("comment", {}).get("comments", [])
                                 for comment in comentarios:
                                     extrair_segmentos(comment.get("body", ""))
@@ -818,8 +812,7 @@ with tab2:
                         st.session_state['jira_dados'] = {
                             "ticket": ticket_input_tab, "lob": str(lob), "titulo": str(titulo),
                             "status": status_ticket, "segmentos_originais": sorted(list(segmentos_encontrados)),
-                            "segmentos_ativos": sorted(list(segmentos_encontrados)), "data_deploy": data_deploy,
-                            "reviewer": qa_reviewer_name
+                            "data_deploy": data_deploy, "reviewer": qa_reviewer_name
                         }
                         st.toast("✅ Metadata synchronized successfully!", icon="✅")
                     else: st.error(f"Error {resp_main.status_code}: Ticket not found.")
@@ -829,20 +822,48 @@ with tab2:
     if 'jira_dados' in st.session_state:
         jd = st.session_state['jira_dados']
         
-        st.markdown("<br><h4>✏️ 2. Job Fine-Tuning</h4>", unsafe_allow_html=True)
+        st.markdown("<br><h4>📁 2. Extract Exact Segments (Matrix Override)</h4>", unsafe_allow_html=True)
+        st.write("Upload the Matrix to bypass Jira naming errors and get 100% accurate segments from the file.")
+        
+        matrix_zip = st.file_uploader("Select Matrix (.xlsx, .csv)", type=["xlsx", "csv"], key="zip_matrix")
+        
+        matrix_segments = []
+        if matrix_zip:
+            try:
+                xls_z = pd.ExcelFile(io.BytesIO(matrix_zip.getvalue()))
+                sheet_to_read = xls_z.sheet_names[0]
+                for s in xls_z.sheet_names:
+                    if 'waterfall' in s.lower() or 'segment' in s.lower() or 'list' in s.lower():
+                        sheet_to_read = s
+                        break
+                
+                df_z = load_and_clean_data(matrix_zip.getvalue(), matrix_zip.name, sheet_to_read)
+                json_z = process_data(df_z)
+                matrix_segments = sorted(list(set([obj.get("CellName", "").replace("-test", "") for obj in json_z if obj.get("CellName")])))
+                if matrix_segments:
+                    st.success(f"✅ {len(matrix_segments)} segments strictly extracted from the Matrix!")
+                else:
+                    st.warning("⚠️ No segments extracted. Make sure the file has a Waterfall structure.")
+            except Exception as e:
+                st.error(f"Error reading matrix: {e}")
+
+        st.markdown("<br><h4>✏️ 3. Job Fine-Tuning</h4>", unsafe_allow_html=True)
         colA, colB, colC = st.columns(3)
         with colA: jd['status'] = st.text_input("Ticket Status:", jd.get('status', ''))
         with colB: jd['data_deploy'] = st.text_input("Deployment Date:", jd.get('data_deploy', ''))
         with colC: jd['reviewer'] = st.text_input("Reviewer:", jd.get('reviewer', ''))
         
+        # Decide de onde vêm os segmentos: Upload Tab 2 > Upload Tab 1 > Jira Guess
+        opcoes_dropdown = matrix_segments if matrix_segments else st.session_state.get('tab1_segments', jd.get('segmentos_originais', []))
+        
         selecionados = st.multiselect(
-            "Segments (Remove unwanted ones):",
-            options=jd.get('segmentos_originais', []),
-            default=jd.get('segmentos_ativos', [])
+            "Segments to Create (Remove unwanted ones):",
+            options=list(set(opcoes_dropdown + jd.get('segmentos_originais', []))),
+            default=opcoes_dropdown
         )
         st.session_state['jira_dados']['segmentos_ativos'] = selecionados
 
-        st.markdown("<br><h4>📦 3. Build Architecture</h4>", unsafe_allow_html=True)
+        st.markdown("<br><h4>📦 4. Build Architecture</h4>", unsafe_allow_html=True)
         if st.button("📥 Generate ZIP Package", type="primary"):
             job_id = jd['ticket']
             lob = jd['lob']
@@ -894,7 +915,8 @@ with tab2:
                         seg_name = "N/A" if seg == "N_A" else seg
                         nome_aba = re.sub(r'[/\\?*\[\]]', '', job_id if seg_name == "N/A" else f"{job_id} - {seg_name}")[:31]
                         
-                        if i == 0: ws_target = ws_temp_rev
+                        if i == 0: 
+                            ws_target = ws_temp_rev
                         else:
                             ws_target = wb_rev.copy_worksheet(ws_temp_rev)
                             for dv in ws_temp_rev.data_validations.dataValidation:
@@ -931,7 +953,8 @@ with tab2:
                         seg_name = "N/A" if enumerate_seg == "N_A" else enumerate_seg
                         nome_aba = re.sub(r'[/\\?*\[\]]', '', job_id if seg_name == "N/A" else f"{job_id} - {seg_name}")[:31]
                         
-                        if i == 0: ws_target = ws_temp_lc
+                        if i == 0: 
+                            ws_target = ws_temp_lc
                         else:
                             ws_target = wb_lc.copy_worksheet(ws_temp_lc)
                             for dv in ws_temp_lc.data_validations.dataValidation:
