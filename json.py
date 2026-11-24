@@ -171,6 +171,15 @@ def extract_metadata(file_bytes, file_name, sheet_name=None):
     try:
         if file_name.endswith('.csv'):
             df_raw = pd.read_csv(io.BytesIO(file_bytes), sep=None, engine='python', header=None)
+        elif file_name.lower().endswith('.pdf'):
+            try:
+                pdf_text, pdf_error = extract_pdf_text(file_bytes)
+                if pdf_error:
+                    return None, pdf_error
+                extract_subjects_from_text(pdf_text, subjects_data)
+            except Exception as e:
+                return None, f"Error processing PDF: {e}"
+
         else:
             df_raw = pd.read_excel(io.BytesIO(file_bytes), sheet_name=sheet_name, header=None)
     except:
@@ -372,6 +381,82 @@ def process_data(df):
 # =====================================================================
 # FUNCTION: ACC SUBJECT GENERATOR (SAMSUNG OMNI-FORMAT OPTIMIZED)
 # =====================================================================
+def extract_pdf_text(file_bytes):
+    text_parts = []
+    pdf_error = ""
+
+    try:
+        from pypdf import PdfReader
+
+        reader = PdfReader(io.BytesIO(file_bytes))
+        for page in reader.pages:
+            page_text = page.extract_text() or ""
+            if page_text.strip():
+                text_parts.append(page_text)
+    except ImportError:
+        pdf_error = "A biblioteca 'pypdf' não está instalada."
+    except Exception as e:
+        pdf_error = f"Erro ao abrir o PDF: {e}"
+
+    if text_parts:
+        return "\n".join(text_parts), ""
+    if pdf_error:
+        return "", pdf_error
+    return "", "O PDF não contém texto extraível. PDFs escaneados podem exigir OCR."
+
+
+def extract_subjects_from_text(text, subjects_data):
+    lines = [line.strip() for line in text.replace("\r", "").splitlines() if line.strip()]
+
+    for idx, line in enumerate(lines):
+        line_clean = re.sub(r"\s+", " ", line).strip()
+
+        inline_match = re.search(
+            r'(?:^|\s)(SL[\s_]?\d+)\s*(?:\(([^)]*)\))?\s*(?:[:;\-=]\s*|\s+)(.*)$',
+            line_clean,
+            re.IGNORECASE
+        )
+        standalone_match = re.match(
+            r'^(?P<code>SL[\s_]?\d+)\s*(?:\((?P<condition>[^)]*)\))?\s*$',
+            line_clean,
+            re.IGNORECASE
+        )
+
+        sl_code = None
+        subject_text = ""
+        condition = ""
+
+        if standalone_match:
+            sl_code = standalone_match.group("code").upper().replace(" ", "").replace("_", "")
+            condition = (standalone_match.group("condition") or "").lower()
+            for next_line in lines[idx + 1:idx + 4]:
+                if re.match(r'^SL[\s_]?\d+\s*(?:\([^)]*\))?\s*$', next_line, re.IGNORECASE):
+                    break
+                if re.match(r'^PH(?:\s|_|-)?\d*\s*[:\-]?$', next_line, re.IGNORECASE):
+                    continue
+                subject_text = next_line.strip()
+                if subject_text:
+                    break
+        elif inline_match:
+            sl_code = inline_match.group(1).upper().replace(" ", "").replace("_", "")
+            condition = (inline_match.group(2) or "").lower()
+            subject_text = inline_match.group(3).strip()
+
+        if not sl_code or not subject_text:
+            continue
+        if re.match(r'^(PH|Preheader|Pre-header)[\s_]?\d*[\s\:]*$', subject_text, re.IGNORECASE):
+            continue
+
+        if "[name]" in subject_text.lower() or "first name" in condition:
+            subject_type = "first_name"
+        else:
+            subject_type = "no_first_name"
+
+        if sl_code not in subjects_data:
+            subjects_data[sl_code] = {"first_name": "", "no_first_name": ""}
+        subjects_data[sl_code][subject_type] = subject_text
+
+
 def generate_acc_subject_code(file_bytes, file_name):
     subjects_data = {}
     
@@ -883,13 +968,10 @@ with tab2:
                     with open(template_csv_path, "rb") as f: csv_content = f.read()
 
                 my_bar.progress(45, text="Creating hierarchical folders...")
-                
-                # Cria uma pasta única de HTML na raiz do ticket (fora do loop)
-                zip_file.writestr(f"{job_id}/02_HTML/", "")
-                
                 for seg in segmentos:
                     seg_folder = f"{job_id}/{seg}" if seg != "N_A" else job_id
                     zip_file.writestr(f"{seg_folder}/01_Inputs/", "")
+                    zip_file.writestr(f"{seg_folder}/02_HTML/", "")
                     zip_file.writestr(f"{seg_folder}/03_LP/", "")
                     if csv_content:
                         seg_name = seg if seg != "N_A" else "General"
@@ -985,9 +1067,9 @@ with tab2:
 # ---------------------------------------------------------------------
 with tab3:
     st.markdown("### ✉️ ACC Intelligent Subject Extractor")
-    st.write("Upload a **URL Matrix (.xlsx)** or a CSV/TXT file. The engine will scan for SL codes and build the E4X personalization logic.")
+    st.write("Upload a **URL Matrix (.xlsx)**, PDF or CSV/TXT file. The engine will scan for SL codes and build the E4X personalization logic.")
     
-    uploaded_sl_file = st.file_uploader("Select Matrix or Text File", type=["xlsx", "xls", "csv", "txt"], key="sl_uploader")
+    uploaded_sl_file = st.file_uploader("Select Matrix, PDF or Text File", type=["xlsx", "xls", "csv", "txt", "pdf"], key="sl_uploader")
     
     if uploaded_sl_file is not None:
         file_bytes = uploaded_sl_file.getvalue()
