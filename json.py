@@ -883,10 +883,13 @@ with tab2:
                     with open(template_csv_path, "rb") as f: csv_content = f.read()
 
                 my_bar.progress(45, text="Creating hierarchical folders...")
+                
+                # Cria uma pasta única de HTML na raiz do ticket (fora do loop)
+                zip_file.writestr(f"{job_id}/02_HTML/", "")
+                
                 for seg in segmentos:
                     seg_folder = f"{job_id}/{seg}" if seg != "N_A" else job_id
                     zip_file.writestr(f"{seg_folder}/01_Inputs/", "")
-                    zip_file.writestr(f"{seg_folder}/02_HTML/", "")
                     zip_file.writestr(f"{seg_folder}/03_LP/", "")
                     if csv_content:
                         seg_name = seg if seg != "N_A" else "General"
