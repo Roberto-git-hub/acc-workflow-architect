@@ -1,4 +1,5 @@
 import streamlit as st
+from streamlit.errors import StreamlitSecretNotFoundError
 import pandas as pd
 import json
 import base64
@@ -600,15 +601,12 @@ def generate_acc_subject_code(file_bytes, file_name):
             if text_nofn: text_nofn = text_nofn[0].upper() + text_nofn[1:]
             
             text_fn_clean = re.sub(r'\[Name\]\s*,?\s*', '', text_fn, flags=re.IGNORECASE).strip()
-            if text_fn_clean: text_fn_clean = text_fn_clean[0].lower() + text_fn_clean[1:]
             
             code += f"        if (hasFirstName) {{\n          subject = \"\" + nameProper + \", {text_fn_clean.replace('\"', '\\\"')}\";\n        }} else {{\n          subject = \"{text_nofn.replace('\"', '\\\"')}\";\n        }}\n      }}"
             preview_data.append({"originalCode": sl_code, "text": text_fn})
             
         else:
             text_fn_clean = re.sub(r'\[Name\]\s*,?\s*', '', text_fn, flags=re.IGNORECASE).strip()
-            if text_fn.lower().strip().startswith("[name]"):
-                if text_fn_clean: text_fn_clean = text_fn_clean[0].lower() + text_fn_clean[1:]
             
             code += f"        if (hasFirstName) {{\n          subject = \"\" + nameProper + \", {text_fn_clean.replace('\"', '\\\"')}\";\n        }} else {{\n          subject = \"{text_nofn.replace('\"', '\\\"')}\";\n        }}\n      }}"
             preview_data.append({"originalCode": sl_code, "text": f"{text_fn}"})
@@ -796,12 +794,14 @@ with tab2:
     with st.container(border=True):
         st.markdown("#### 🔌 1. Jira Connection (Fetch Metadata)")
         
+        JIRA_EMAIL = None
+        JIRA_TOKEN = None
         try:
             JIRA_EMAIL = st.secrets["JIRA_EMAIL"]
             JIRA_TOKEN = st.secrets["JIRA_TOKEN"]
             JIRA_URL = "https://netbiis.atlassian.net"
-        except KeyError:
-            JIRA_EMAIL = None
+        except (KeyError, StreamlitSecretNotFoundError):
+            pass
         
         col_j1, col_j2, col_j3 = st.columns([2, 1, 1])
         with col_j1:
@@ -818,8 +818,8 @@ with tab2:
                 st.rerun()
                 
         if fetch_btn:
-            if not JIRA_EMAIL:
-                st.error("⚠️ Credentials not found. Please configure 'Secrets' on Streamlit Cloud.")
+            if not JIRA_EMAIL or not JIRA_TOKEN:
+                st.error("⚠️ Credenciais do Jira não encontradas. Configure JIRA_EMAIL e JIRA_TOKEN em `.streamlit/secrets.toml` para uso local ou em Secrets para o Streamlit Cloud.")
             elif ticket_input_tab:
                 with st.spinner(f"Analyzing {ticket_input_tab}..."):
                     auth = HTTPBasicAuth(JIRA_EMAIL, JIRA_TOKEN)
