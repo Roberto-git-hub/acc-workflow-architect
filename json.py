@@ -171,15 +171,6 @@ def extract_metadata(file_bytes, file_name, sheet_name=None):
     try:
         if file_name.endswith('.csv'):
             df_raw = pd.read_csv(io.BytesIO(file_bytes), sep=None, engine='python', header=None)
-        elif file_name.lower().endswith('.pdf'):
-            try:
-                pdf_text, pdf_error = extract_pdf_text(file_bytes)
-                if pdf_error:
-                    return None, pdf_error
-                extract_subjects_from_text(pdf_text, subjects_data)
-            except Exception as e:
-                return None, f"Error processing PDF: {e}"
-
         else:
             df_raw = pd.read_excel(io.BytesIO(file_bytes), sheet_name=sheet_name, header=None)
     except:
@@ -460,7 +451,7 @@ def extract_subjects_from_text(text, subjects_data):
 def generate_acc_subject_code(file_bytes, file_name):
     subjects_data = {}
     
-    if file_name.endswith(('.xlsx', '.xls')):
+    if file_name.lower().endswith(('.xlsx', '.xls')):
         try:
             xls = pd.ExcelFile(io.BytesIO(file_bytes))
             
@@ -543,7 +534,13 @@ def generate_acc_subject_code(file_bytes, file_name):
                     
         except Exception as e:
             return None, f"Error processing Excel: {e}"
-            
+
+    elif file_name.lower().endswith('.pdf'):
+        pdf_text, pdf_error = extract_pdf_text(file_bytes)
+        if pdf_error:
+            return None, pdf_error
+        extract_subjects_from_text(pdf_text, subjects_data)
+
     else:
         try:
             file_content = file_bytes.decode('utf-8')
